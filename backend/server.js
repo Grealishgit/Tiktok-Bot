@@ -52,17 +52,41 @@ bot.on("text", async (ctx) => {
         const result = apiResponse.data;
 
         if (result.type === 'carousel') {
-            // Send images as media group
-            const media = result.images.map((imageUrl, index) => ({
-                type: 'photo',
-                media: imageUrl,
-                caption: index === 0 ? `✅ Here’s your TikTok carousel! Made By Hunter😂😂\n${result.title}` : undefined
-            }));
-            await ctx.replyWithMediaGroup(media);
+            // Send images as media group (max 10 per group)
+            const images = result.images;
+            const maxPerGroup = 10;
+
+            for (let i = 0; i < images.length; i += maxPerGroup) {
+                const chunk = images.slice(i, i + maxPerGroup);
+                const media = chunk.map((imageUrl, index) => ({
+                    type: 'photo',
+                    media: imageUrl,
+                    caption: (i === 0 && index === 0) ? `✅ Here’s your TikTok carousel!\n${result.title}\n Made By Hunter😂😂` : undefined
+                }));
+
+                try {
+                    await ctx.replyWithMediaGroup(media);
+                    // Small delay between groups to avoid rate limits
+                    if (i + maxPerGroup < images.length) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                } catch (error) {
+                    console.error('Error sending media group:', error);
+                    // If media group fails, try sending individually
+                    for (const imageUrl of chunk) {
+                        try {
+                            await ctx.replyWithPhoto(imageUrl);
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        } catch (photoError) {
+                            console.error('Error sending individual photo:', photoError);
+                        }
+                    }
+                }
+            }
         } else if (result.type === 'video') {
             // Send video
             await ctx.replyWithVideo({ url: result.video },
-                { caption: `✅ Here’s your TikTok video! Made By Hunter😂😂\n${result.title}` });
+                { caption: `✅ Here’s your TikTok video!\n${result.title}\nMade By HunterDev😂😂!` });
         } else {
             ctx.reply("⚠️ Unknown media type.");
         }

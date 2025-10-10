@@ -116,7 +116,7 @@ const App = () => {
           <div className="w-8 h-8 bg-gradient-to-r from-pink-500 to-red-500 rounded-full flex items-center justify-center">
             <span className="text-white font-bold text-sm">T</span>
           </div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-pink-500 to-red-500 bg-clip-text text-transparent">
+          <h1 className="text-2xl text-center font-bold bg-gradient-to-r from-pink-500 to-red-500 bg-clip-text text-transparent">
             TikTok Downloader & Information Extractor
           </h1>
         </div>
@@ -126,7 +126,7 @@ const App = () => {
       <div className="w-full  mx-auto px-4">
         {/* Input Form */}
         <form onSubmit={handleSubmit} className="mb-8">
-          <div className="flex space-x-2">
+          <div className="flex md:flex-row flex-col gap-3 space-x-2">
             <input
               type="url"
               value={url}
