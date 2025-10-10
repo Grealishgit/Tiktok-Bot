@@ -7,7 +7,7 @@ import { Telegraf } from "telegraf";
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT;
 
 // CORS configuration
 app.use(cors({
@@ -31,7 +31,7 @@ const bot = new Telegraf(process.env.TOKEN);
 // Start command
 bot.start((ctx) => {
     console.log('Start command received');
-    ctx.reply("👋 Hey! Send me a TikTok link and I'll download the video or carousel for you.");
+    ctx.reply("👋 Yooh paste hio link hapa then uchill 😂 ikifail toka hapa💀.");
 });
 
 // Handle TikTok links
