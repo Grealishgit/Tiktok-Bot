@@ -193,13 +193,31 @@ app.post('/api/download', async (req, res) => {
             return res.json({
                 type: 'carousel',
                 images: data.data.images,
-                title: data.data.title || 'TikTok Carousel'
+                title: data.data.title || 'TikTok Carousel',
+                id: data.data.id,
+                region: data.data.region,
+                author: data.data.author,
+                digg_count: data.data.digg_count,
+                comment_count: data.data.comment_count,
+                share_count: data.data.share_count,
+                play_count: data.data.play_count,
+                duration: data.data.duration,
+                create_time: data.data.create_time,
             });
         } else if (data.data.play) {
             return res.json({
                 type: 'video',
                 video: data.data.play,
-                title: data.data.title || 'TikTok Video'
+                title: data.data.title || 'TikTok Video',
+                id: data.data.id,
+                region: data.data.region,
+                author: data.data.author,
+                digg_count: data.data.digg_count,
+                comment_count: data.data.comment_count,
+                share_count: data.data.share_count,
+                play_count: data.data.play_count,
+                duration: data.data.duration,
+                create_time: data.data.create_time,
             });
         } else {
             return res.status(404).json({ error: 'No media found in this TikTok' });

@@ -1,11 +1,37 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
+//Format date in this format January 1, 2024, 10:00 AM
+const formatDate = (timestamp) => {
+  const date = new Date(timestamp * 1000);
+  return date.toLocaleString('default',
+    { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true });
+};
+
+// format views, likes, comments, shares with commas
+const formatNumber = (num) => {
+  if (num === undefined || num === null) return '0';
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
+//format 1000 to 1K, 1000000 to 1M
+const formatCount = (num) => {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  }
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  }
+  return num.toString();
+};
+
 const App = () => {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -18,14 +44,34 @@ const App = () => {
     try {
       // Call backend API
       const response = await axios.post('http://localhost:4000/api/download', { url: url.trim() });
-      console.log('API Response:', response.data); // Log the response
-      setResult(response.data);
+      // console.log('API Response:', response.data); // Log the response
+      const apiData = response.data;
+      console.log('API Data:', apiData); // Log the parsed data
+
+      setResult({
+        id: apiData.id || '',
+        region: apiData.region || '',
+        type: apiData.type || (apiData.images ? 'carousel' : 'video'),
+        images: Array.isArray(apiData.images) ? apiData.images : [],
+        duration: apiData.duration ?? '',
+        views: apiData.play_count ?? '',
+        likes: apiData.digg_count ?? '',
+        play_count: apiData.play_count ?? '',
+        comment_count: apiData.comment_count ?? '',
+        share_count: apiData.share_count ?? '',
+        title: apiData.title || '',
+        avatar: apiData.author && apiData.author.avatar ? apiData.author.avatar : '',
+        nickname: apiData.author && apiData.author.nickname ? apiData.author.nickname : '',
+        video: apiData.play || apiData.video || '',
+        postedOn: apiData.create_time ? apiData.create_time : '',
+      });
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to download TikTok content');
     } finally {
       setLoading(false);
     }
   };
+
 
   const downloadFile = async (fileUrl, filename) => {
     try {
@@ -99,31 +145,108 @@ const App = () => {
         {result && !loading && (
           <div className="space-y-6">
             <div className='w-full justify-between flex flex-col md:flex-row gap-4'>
-              {/* Title */}
-              <div className='flex-1'>
-                <div className="text-center">
-                  <h2 className="text-xl font-semibold mb-2">{result.title}</h2>
-                </div>
+
+              <div className='flex-1 md:sticky md:fixed md:top-8 p-4 space-y-4 bg-gray-900'>
                 {/* Info Section */}
+
                 <div className="bg-gray-900 rounded-lg p-6">
-                  <h3 className="text-lg font-semibold mb-4 text-pink-400">Content Info</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className='justify-between flex'>
+                    <h3 className="text-lg font-semibold mb-4 text-pink-400">Content Info</h3>
+                    <img
+                      src={result.avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'}
+                      alt={result.nickname || 'Unknown'}
+                      className='w-20 h-20 object-cover rounded-full bg-gray-800 border border-gray-700'
+                      onError={e => { e.target.onerror = null; e.target.src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'; }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5 text-sm">
+                    <div>
+                      <span className="text-gray-400">ID:</span>
+                      <span className="ml-2">{result.id || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Country:</span>
+                      <span className="ml-2">{result.region || 'N/A'}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-gray-400">Posted By:</span>
+                      <span className="ml-2 capitalize">{result.nickname || 'N/A'}</span>
+                    </div>
+
                     <div>
                       <span className="text-gray-400">Type:</span>
-                      <span className="ml-2 capitalize">{result.type}</span>
+                      <span className="ml-2 capitalize">{result.type || 'N/A'}</span>
                     </div>
-                    <div>
+                    {/* <div>
                       <span className="text-gray-400">Source:</span>
                       <span className="ml-2">TikTok</span>
-                    </div>
+                    </div> */}
+
                     {result.type === 'carousel' && (
                       <div>
                         <span className="text-gray-400">Images:</span>
-                        <span className="ml-2">{result.images.length}</span>
+                        <span className="ml-2">{result.images ? result.images.length : 0}</span>
                       </div>
                     )}
+
+                    {result.type === 'video' && (
+                      <>
+                        <span className="text-gray-400">Duration:</span>
+                        <span className="ml-2">{result.duration || 'N/A'}</span>
+                      </>
+                    )}
+
+                    <div>
+                      <span className="text-gray-400">Likes:</span>
+                      <span className="ml-2">{formatCount(result.likes) || 0}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-gray-400">Views:</span>
+                      <span className="ml-2">{formatCount(result.views) || 0}</span>
+                    </div>
+
+                    {/* {result.type === 'video' && (
+                      <>
+                        <span className="text-gray-400">Views:</span>
+                        <span className="ml-2">{result.play_count || 0}</span>
+                      </>
+                    )} */}
+
+                    <div>
+                      <span className="text-gray-400">Comments:</span>
+                      <span className="ml-2">{result.comment_count || 0}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-gray-400">Shares:</span>
+                      <span className="ml-2">{result.share_count || 0}</span>
+                    </div>
                   </div>
+
+                  <div className='mt-4'>
+                    <span className="text-gray-400">Posted On:</span>
+                    <span className="ml-2">{formatDate(result.postedOn) || 'N/A'}</span>
+                  </div>
+
+
+
                 </div>
+                {/* Title */}
+                <div className="border border-gray-700 rounded-lg p-4 text-center">
+                  <h2 className="text-xl text-start font-semibold mb-2">{result.title}</h2>
+                  <div className='flex justify-between w-full'>
+                    <p className="text-gray-400">By: <span className="font-medium text-pink-500">
+                      {result.nickname || 'No description available'}</span></p>
+                    <p className="text-gray-400">On: <span className="font-medium text-pink-500">
+                      {formatDate(result.postedOn || 'N/A')}</span></p>
+                  </div>
+
+                </div>
+
+
               </div>
 
 
