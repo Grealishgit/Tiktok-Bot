@@ -326,7 +326,8 @@ const App = () => {
                       {result.images.map((imageUrl, index) => (
                         <div key={index} className="bg-gray-900 rounded-lg overflow-hidden">
                           <img
-                            src={`/api/image?url=${encodeURIComponent(imageUrl)}`}
+                            src={imageUrl}
+                            // src={/api/image ? url = ${encodeURIComponent(imageUrl)}}
                             alt={`Slide ${index + 1}`}
                             className="w-full h-100 object-cover"
                             loading="lazy"
