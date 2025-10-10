@@ -138,7 +138,7 @@ const App = () => {
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-3 bg-gradient-to-r from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              className="px-6 py-3 bg-gradient-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
             >
               {loading ? 'Downloading...' : 'Download'}
             </button>
@@ -180,7 +180,7 @@ const App = () => {
                     }}>
                     <div className='justify-between p-2 flex'>
 
-                      <div className='border border-gray-700 px-6 h-10 rounded-lg bg-black/50'>
+                      <div className='border justify-center border-gray-700 px-6 h-9 rounded-lg bg-black/50'>
                         <h3 className="text-lg font-semibold text-pink-500">{result.nickname || 'N/A'}</h3>
                       </div>
 
@@ -309,7 +309,7 @@ const App = () => {
                     <div className="p-4">
                       <button
                         onClick={() => downloadFile(result.video, `tiktok-video-${Date.now()}.mp4`)}
-                        className="w-full py-3 bg-gradient-to-r from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold transition-all duration-200"
+                        className="w-full py-3 bg-gradient-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold transition-all duration-200"
                       >
                         📥 Download Video
                       </button>
@@ -331,7 +331,7 @@ const App = () => {
                           <div className="p-3">
                             <button
                               onClick={() => downloadFile(imageUrl, `tiktok-image-${index + 1}-${Date.now()}.jpg`)}
-                              className="w-full py-2 bg-gradient-to-r from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold text-sm transition-all duration-200"
+                              className="w-full py-2 bg-gradient-to-r cursor-pointer  from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold text-sm transition-all duration-200"
                             >
                               📥 Download Image {index + 1}
                             </button>
@@ -346,7 +346,7 @@ const App = () => {
                             setTimeout(() => downloadFile(imageUrl, `tiktok-image-${index + 1}-${Date.now()}.jpg`), index * 500);
                           });
                         }}
-                        className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-semibold transition-all duration-200"
+                        className="px-6 py-3 bg-gradient-to-r cursor-pointer from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-semibold transition-all duration-200"
                       >
                         📥 Download All Images
                       </button>
