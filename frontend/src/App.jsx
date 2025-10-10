@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import logo from '../src/assets/tik5.png'
 
 //Format date in this format January 1, 2024, 10:00 AM
 const formatDate = (timestamp) => {
@@ -113,9 +114,10 @@ const App = () => {
       {/* Header */}
       <div className="flex items-center justify-center py-8">
         <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-gradient-to-r from-pink-500 to-red-500 rounded-full flex items-center justify-center">
+          <img src={logo} alt="Logo" className='md:w-15 md:h-15 w-12 h-12 border-4 border-pink-500 rounded-full' />
+          {/* <div className="w-8 h-8 bg-gradient-to-r from-pink-500 to-red-500 rounded-full flex items-center justify-center">
             <span className="text-white font-bold text-sm">T</span>
-          </div>
+          </div> */}
           <h1 className="text-2xl text-center font-bold bg-gradient-to-r from-pink-500 to-red-500 bg-clip-text text-transparent">
             TikTok Downloader & Information Extractor
           </h1>
@@ -164,7 +166,7 @@ const App = () => {
           <div className="space-y-6">
             <div className='w-full justify-between flex flex-col md:flex-row gap-4'>
 
-              <div className='flex-1 md:sticky md:fixed md:top-8 p-4 space-y-4 bg-gray-900'>
+              <div className='flex-1  md:top-8 p-4 space-y-4 bg-gray-900'>
                 {/* Info Section */}
 
                 <div className="bg-gray-900 rounded-lg p-6">
@@ -193,7 +195,7 @@ const App = () => {
                   </div>
                   </div>
 
-
+                  <div className='border border-gray-700 p-4 items-center justify-center rounded-lg bg-black/50'>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-5 text-sm">
                     <div>
                       <span className="text-gray-400">ID:</span>
@@ -271,18 +273,16 @@ const App = () => {
                       <span className="text-gray-400">Shares:</span>
                       <span className="ml-2">{result.share_count || 0}</span>
                     </div>
+                    </div>
                   </div>
-
-
-
-
 
                 </div>
                 {/* Title */}
-                <div className="border border-gray-700 rounded-lg p-4 text-center">
+                <div className="border border-gray-700 bg-black/50 rounded-lg p-4 text-center">
                   <h2 className="text-xl text-start font-semibold mb-2">{result.title}</h2>
-                  <div className='flex justify-between w-full'>
-                    <p className="text-gray-400">By: <span className="font-medium text-pink-500">
+
+                  <div className='flex justify-between mt-7 w-full'>
+                    <p className="text-gray-400">By: <span className="font-semibold text-pink-500">
                       {result.nickname || 'No description available'}</span></p>
                     <p className="text-gray-400">On: <span className="font-medium text-pink-500">
                       {formatDate(result.postedOn || 'N/A')}</span></p>
@@ -325,7 +325,7 @@ const App = () => {
                           <img
                             src={`/api/image?url=${encodeURIComponent(imageUrl)}`}
                             alt={`Slide ${index + 1}`}
-                            className="w-full h-64 object-cover"
+                            className="w-full h-100 object-cover"
                             loading="lazy"
                           />
                           <div className="p-3">
@@ -363,7 +363,11 @@ const App = () => {
 
       {/* Footer */}
       <footer className="text-center py-8 text-gray-500 text-sm">
-        <p>Built by <span className="font-semibold text-pink-500">Hunter</span>  with ❤️ for downloading TikTok content</p>
+        <p className='mb-2'>Download with Telegram
+          <a className='underline font-semibold text-pink-500' href="https://t.me/TikscrapperBot">Tiktok Scrapper</a></p>
+        <p>Built by <span className="font-semibold text-pink-500">
+          <a className='underline' href="https://github.com/Grealishgit">Hunter</a>
+        </span>  with ❤️ for downloading TikTok content</p>
       </footer>
     </div>
   );
