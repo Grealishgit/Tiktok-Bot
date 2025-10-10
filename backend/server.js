@@ -10,6 +10,7 @@ const app = express();
 const PORT = process.env.PORT;
 
 const frontendURL = process.env.FRONTEND_URL;
+const BACKEND_URL = process.env.BACKEND_URL;
 
 // CORS configuration
 app.use(cors({
@@ -50,10 +51,10 @@ bot.on("text", async (ctx) => {
     }
 
     try {
-        ctx.reply("⏳ Downloading...");
+        ctx.reply("⏳ Thinking😂💀...");
 
         // Call local API
-        const apiResponse = await axios.post('http://localhost:4000/api/download', { url });
+        const apiResponse = await axios.post(`${BACKEND_URL}/api/download`, { url });
 
         const result = apiResponse.data;
 
