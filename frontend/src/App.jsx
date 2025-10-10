@@ -68,6 +68,7 @@ const App = () => {
         type: apiData.type || (apiData.images ? 'carousel' : 'video'),
         images: Array.isArray(apiData.images) ? apiData.images : [],
         original: apiData.original || '',
+        origin_cover: apiData.origin_cover || '',
         duration: apiData.duration ?? '',
         views: apiData.play_count ?? '',
         likes: apiData.digg_count ?? '',
@@ -167,17 +168,33 @@ const App = () => {
                 {/* Info Section */}
 
                 <div className="bg-gray-900 rounded-lg p-6">
-                  <div className='justify-between flex'>
-                    <h3 className="text-lg font-semibold mb-4 text-pink-400">Content Info</h3>
+                  <div className='mb-4'
+                    style={{
+                      backgroundImage: `url(${result.origin_cover || 'https://www.transparenttextures.com/patterns/asfalt-light.png'})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      borderRadius: '5px',
+                      width: '100%',
+                      height: '200px',
+                      // padding: '10px',
+                    }}>
+                    <div className='justify-between p-2 flex'>
+
+                      <div className='border border-gray-700 px-6 h-10 rounded-lg bg-black/50'>
+                        <h3 className="text-lg font-semibold text-pink-500">{result.nickname || 'N/A'}</h3>
+                      </div>
+
                     <img
                       src={result.avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'}
                       alt={result.nickname || 'Unknown'}
-                      className='w-20 h-20 object-cover rounded-full bg-gray-800 border border-gray-700'
+                        className='w-20 h-20 object-cover rounded-full bg-gray-800 border-4 border-white'
                       onError={e => { e.target.onerror = null; e.target.src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'; }}
                     />
                   </div>
+                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5 text-sm">
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-5 text-sm">
                     <div>
                       <span className="text-gray-400">ID:</span>
                       <span className="ml-2">{result.id || 'N/A'}</span>
@@ -220,7 +237,7 @@ const App = () => {
                       </>
                     )}
                     <div>
-                      <span className="text-gray-400">Original:</span>
+                      <span className="text-gray-400">Original Music:</span>
                       <span className="ml-2">{result.original ? "Yes" : "No"}</span>
                     </div>
 
@@ -256,10 +273,7 @@ const App = () => {
                     </div>
                   </div>
 
-                  <div className='mt-4'>
-                    <span className="text-gray-400">Posted On:</span>
-                    <span className="ml-2">{formatDate(result.postedOn) || 'N/A'}</span>
-                  </div>
+
 
 
 
