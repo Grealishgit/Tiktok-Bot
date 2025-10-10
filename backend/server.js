@@ -14,7 +14,7 @@ const BACKEND_URL = "https://tiktok-bot-kappa.vercel.app";
 
 // CORS configuration
 app.use(cors({
-    origin: [frontendURL, PORT],
+    origin: [frontendURL, BACKEND_URL],
     // Allow frontend dev server and production
     credentials: true
 }));
