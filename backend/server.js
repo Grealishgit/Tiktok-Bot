@@ -1,6 +1,7 @@
 import express from 'express';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import cors from 'cors';
 import { Telegraf } from "telegraf";
 
 dotenv.config();
@@ -8,6 +9,12 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// CORS configuration
+app.use(cors({
+    origin: ['http://localhost:5173', 'http://localhost:4000'],
+    // Allow frontend dev server and production
+    credentials: true
+}));
 
 app.get('/', (req, res) => {
     res.send('TikTok Downloader API is running');
@@ -204,9 +211,33 @@ app.post('/api/download', async (req, res) => {
     }
 });
 
-// Health check
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', message: 'TikTok Downloader API is running' });
+// Proxy images to bypass CORS/network issues
+app.get('/api/image', async (req, res) => {
+    try {
+        const imageUrl = req.query.url;
+        if (!imageUrl) {
+            return res.status(400).json({ error: 'Image URL required' });
+        }
+
+        // Fetch the image from TikTok CDN
+        const response = await axios.get(imageUrl, {
+            responseType: 'stream',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+
+        // Set appropriate headers
+        res.setHeader('Content-Type', response.headers['content-type'] || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+
+        // Pipe the image stream to response
+        response.data.pipe(res);
+
+    } catch (error) {
+        console.error('Image proxy error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch image' });
+    }
 });
 
 app.listen(PORT, () => {

@@ -1,11 +1,205 @@
-import React from 'react'
+import React, { useState } from 'react';
+import axios from 'axios';
 
 const App = () => {
-  return (
-    <div className="w-full min-h-screen justify-center items-center">
-      <h1 className='text-3xl text-red-500'>Welcome to TickTok Downloader!</h1>
-    </div>
-  )
-}
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
 
-export default App
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!url.trim()) return;
+
+    setLoading(true);
+    setError('');
+    setResult(null);
+
+    try {
+      // Call backend API
+      const response = await axios.post('http://localhost:4000/api/download', { url: url.trim() });
+      console.log('API Response:', response.data); // Log the response
+      setResult(response.data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to download TikTok content');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadFile = async (fileUrl, filename) => {
+    try {
+      const response = await fetch(fileUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      alert('Download failed');
+    }
+  };
+
+  return (
+    <div className="min-h-screen p-5 w-full bg-black text-white">
+      {/* Header */}
+      <div className="flex items-center justify-center py-8">
+        <div className="flex items-center space-x-2">
+          <div className="w-8 h-8 bg-gradient-to-r from-pink-500 to-red-500 rounded-full flex items-center justify-center">
+            <span className="text-white font-bold text-sm">T</span>
+          </div>
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-pink-500 to-red-500 bg-clip-text text-transparent">
+            TikTok Downloader
+          </h1>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="w-full  mx-auto px-4">
+        {/* Input Form */}
+        <form onSubmit={handleSubmit} className="mb-8">
+          <div className="flex space-x-2">
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Paste TikTok URL here..."
+              className="flex-1 px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500"
+              required
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-3 bg-gradient-to-r from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+            >
+              {loading ? 'Downloading...' : 'Download'}
+            </button>
+          </div>
+        </form>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-900/50 border border-red-700 rounded-lg">
+            <p className="text-red-400">{error}</p>
+          </div>
+        )}
+
+        {/* Loading State */}
+        {loading && (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500"></div>
+          </div>
+        )}
+
+        {/* Results */}
+        {result && !loading && (
+          <div className="space-y-6">
+            <div className='w-full justify-between flex flex-col md:flex-row gap-4'>
+              {/* Title */}
+              <div className='flex-1'>
+                <div className="text-center">
+                  <h2 className="text-xl font-semibold mb-2">{result.title}</h2>
+                </div>
+                {/* Info Section */}
+                <div className="bg-gray-900 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold mb-4 text-pink-400">Content Info</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-400">Type:</span>
+                      <span className="ml-2 capitalize">{result.type}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Source:</span>
+                      <span className="ml-2">TikTok</span>
+                    </div>
+                    {result.type === 'carousel' && (
+                      <div>
+                        <span className="text-gray-400">Images:</span>
+                        <span className="ml-2">{result.images.length}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+
+              <div className="flex-1 space-y-6">
+                {/* Media Content */}
+                {result.type === 'video' && (
+                  <div className="bg-gray-900 rounded-lg overflow-hidden">
+                    <video
+                      controls
+                      className="w-full max-h-96 object-contain"
+                      src={result.video}
+                      poster=""
+                    >
+                      Your browser does not support the video tag.
+                    </video>
+                    <div className="p-4">
+                      <button
+                        onClick={() => downloadFile(result.video, `tiktok-video-${Date.now()}.mp4`)}
+                        className="w-full py-3 bg-gradient-to-r from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold transition-all duration-200"
+                      >
+                        📥 Download Video
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {result.type === 'carousel' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {result.images.map((imageUrl, index) => (
+                        <div key={index} className="bg-gray-900 rounded-lg overflow-hidden">
+                          <img
+                            src={`/api/image?url=${encodeURIComponent(imageUrl)}`}
+                            alt={`Slide ${index + 1}`}
+                            className="w-full h-64 object-cover"
+                            loading="lazy"
+                          />
+                          <div className="p-3">
+                            <button
+                              onClick={() => downloadFile(imageUrl, `tiktok-image-${index + 1}-${Date.now()}.jpg`)}
+                              className="w-full py-2 bg-gradient-to-r from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold text-sm transition-all duration-200"
+                            >
+                              📥 Download Image {index + 1}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-center">
+                      <button
+                        onClick={() => {
+                          result.images.forEach((imageUrl, index) => {
+                            setTimeout(() => downloadFile(imageUrl, `tiktok-image-${index + 1}-${Date.now()}.jpg`), index * 500);
+                          });
+                        }}
+                        className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-semibold transition-all duration-200"
+                      >
+                        📥 Download All Images
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <footer className="text-center py-8 text-gray-500 text-sm">
+        <p>Built by <span className="font-semibold text-pink-500">Hunter</span>  with ❤️ for downloading TikTok content</p>
+      </footer>
+    </div>
+  );
+};
+
+export default App;
