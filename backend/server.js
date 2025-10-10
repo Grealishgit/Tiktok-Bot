@@ -9,12 +9,18 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT;
 
+const frontendURL = process.env.FRONTEND_URL;
+
 // CORS configuration
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:4000'],
+    origin: [frontendURL, PORT],
     // Allow frontend dev server and production
     credentials: true
 }));
+
+console.log(`Server is running on port ${PORT}`);
+console.log(`Frontend URL is ${frontendURL}`);
+
 
 app.get('/', (req, res) => {
     res.send('TikTok Downloader API is running');

@@ -56,9 +56,11 @@ const App = () => {
     setError('');
     setResult(null);
 
+    const API_URL = import.meta.env.VITE_API_URL;
+
     try {
       // Call backend API
-      const response = await axios.post('http://localhost:4000/api/download', { url: url.trim() });
+      const response = await axios.post(`${API_URL}/api/download`, { url: url.trim() });
       // console.log('API Response:', response.data); // Log the response
       const apiData = response.data;
       console.log('API Data:', apiData); // Log the parsed data
