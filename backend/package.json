@@ -5,8 +5,9 @@
   "main": "bot.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node bot.js",
-    "server": "nodemon bot.js"
+    "start": "node bot.js && node server.js",
+    "server": "node bot.js && node server.js",
+    "bot": "nodemon bot.js"
   },
   "keywords": [],
   "author": "",
@@ -14,7 +15,9 @@
   "type": "module",
   "dependencies": {
     "axios": "^1.12.2",
+    "body-parser": "^2.2.0",
     "dotenv": "^17.2.3",
+    "express": "^5.1.0",
     "telegraf": "^4.16.3"
   },
   "devDependencies": {

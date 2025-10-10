@@ -1,26 +1,18 @@
-import { Telegraf } from "telegraf"; import express from "express";
-
+import { Telegraf } from "telegraf";
 import axios from "axios";
 
-import dotenv from "dotenv"; const PORT = 4000
-
-const app = express();    
+import dotenv from "dotenv";
 
 dotenv.config();
-
 const { TOKEN } = process.env;
-
-app.get('/', (req, res) => {
-    res.send('TikTok Downloader Bot is running');
-});
 
 // 🔑 Replace with your bot token from BotFather
 const bot = new Telegraf(process.env.TOKEN);
 // console.log(TOKEN);
 
+
 // Start command
 bot.start((ctx) => {
-    console.log('Start command received');
     ctx.reply("👋 Hey! Send me a TikTok link and I'll download the video or carousel for you.");
 });
 
@@ -36,25 +28,33 @@ bot.on("text", async (ctx) => {
     try {
         ctx.reply("⏳ Downloading...");
 
-        // Call local API
-        const apiResponse = await axios.post('http://localhost:4000/api/download', { url });
+        // ⚡ Example API (we can switch if you want)
+        const apiUrl = `https://tikwm.com/api?url=${encodeURIComponent(url)}`;
+        const { data } = await axios.get(apiUrl);
 
-        const result = apiResponse.data;
+        if (data.code !== 0 || !data.data) {
+            return ctx.reply("⚠️ Couldn't fetch the TikTok. Maybe it's private?");
+        }
 
-        if (result.type === 'carousel') {
+        // Check if it's a carousel (has images)
+        if (data.data.images && data.data.images.length > 0) {
             // Send images as media group
-            const media = result.images.map((imageUrl, index) => ({
+            const media = data.data.images.map((imageUrl, index) => ({
                 type: 'photo',
                 media: imageUrl,
-                caption: index === 0 ? `✅ Here’s your TikTok carousel! Made By Hunter😂😂\n${result.title}` : undefined
+                caption: index === 0 ? "✅ Here’s your TikTok carousel! Made By Hunter😂😂" : undefined
             }));
+
             await ctx.replyWithMediaGroup(media);
-        } else if (result.type === 'video') {
+        } else if (data.data.play) {
             // Send video
-            await ctx.replyWithVideo({ url: result.video },
-                { caption: `✅ Here’s your TikTok video! Made By Hunter😂😂\n${result.title}` });
+            await ctx.replyWithVideo({ url: data.data.play },
+                { caption: "✅ Here’s your TikTok video!" },
+                { caption: "Made By Hunter" }
+
+            );
         } else {
-            ctx.reply("⚠️ Unknown media type.");
+            return ctx.reply("⚠️ No media found in this TikTok.");
         }
 
     } catch (err) {
