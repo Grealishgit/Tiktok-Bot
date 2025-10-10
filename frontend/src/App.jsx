@@ -14,6 +14,20 @@ const formatNumber = (num) => {
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 };
 
+// Format duration from seconds to 1 1hr 2mins 3secs
+const formatDuration = (seconds) => {
+  if (!seconds || isNaN(seconds) || seconds <= 0) return '0 secs';
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  let result = '';
+  if (hrs > 0) result += `${hrs} hr${hrs > 1 ? 's' : ''} `;
+  if (mins > 0) result += `${mins} min${mins > 1 ? 's' : ''} `;
+  if (secs > 0) result += `${secs} sec${secs > 1 ? 's' : ''}`;
+  return result.trim();
+};
+
+
 //format 1000 to 1K, 1000000 to 1M
 const formatCount = (num) => {
   if (num >= 1000000) {
@@ -53,15 +67,18 @@ const App = () => {
         region: apiData.region || '',
         type: apiData.type || (apiData.images ? 'carousel' : 'video'),
         images: Array.isArray(apiData.images) ? apiData.images : [],
+        original: apiData.original || '',
         duration: apiData.duration ?? '',
         views: apiData.play_count ?? '',
         likes: apiData.digg_count ?? '',
         play_count: apiData.play_count ?? '',
         comment_count: apiData.comment_count ?? '',
+        download_count: apiData.download_count ?? '',
         share_count: apiData.share_count ?? '',
         title: apiData.title || '',
         avatar: apiData.author && apiData.author.avatar ? apiData.author.avatar : '',
         nickname: apiData.author && apiData.author.nickname ? apiData.author.nickname : '',
+        uniqueId: apiData.author && apiData.author.unique_id ? apiData.author.unique_id : '',
         video: apiData.play || apiData.video || '',
         postedOn: apiData.create_time ? apiData.create_time : '',
       });
@@ -99,7 +116,7 @@ const App = () => {
             <span className="text-white font-bold text-sm">T</span>
           </div>
           <h1 className="text-2xl font-bold bg-gradient-to-r from-pink-500 to-red-500 bg-clip-text text-transparent">
-            TikTok Downloader
+            TikTok Downloader & Information Extractor
           </h1>
         </div>
       </div>
@@ -166,12 +183,16 @@ const App = () => {
                       <span className="ml-2">{result.id || 'N/A'}</span>
                     </div>
                     <div>
+                      <span className="text-gray-400">Username:</span>
+                      <span className="ml-2">{result.uniqueId || 'N/A'}</span>
+                    </div>
+                    <div>
                       <span className="text-gray-400">Country:</span>
                       <span className="ml-2">{result.region || 'N/A'}</span>
                     </div>
 
                     <div>
-                      <span className="text-gray-400">Posted By:</span>
+                      <span className="text-gray-400">User:</span>
                       <span className="ml-2 capitalize">{result.nickname || 'N/A'}</span>
                     </div>
 
@@ -193,10 +214,15 @@ const App = () => {
 
                     {result.type === 'video' && (
                       <>
-                        <span className="text-gray-400">Duration:</span>
-                        <span className="ml-2">{result.duration || 'N/A'}</span>
+                        <p className="text-gray-400">Duration:
+                          <span className="text-white font-semibold"> {formatDuration(result.duration || 'N/A')}</span>
+                        </p>
                       </>
                     )}
+                    <div>
+                      <span className="text-gray-400">Original:</span>
+                      <span className="ml-2">{result.original ? "Yes" : "No"}</span>
+                    </div>
 
                     <div>
                       <span className="text-gray-400">Likes:</span>
@@ -218,6 +244,10 @@ const App = () => {
                     <div>
                       <span className="text-gray-400">Comments:</span>
                       <span className="ml-2">{result.comment_count || 0}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Downloads:</span>
+                      <span className="ml-2">{result.download_count || 0}</span>
                     </div>
 
                     <div>
