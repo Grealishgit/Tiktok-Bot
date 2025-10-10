@@ -10,7 +10,7 @@ const app = express();
 const PORT = process.env.PORT;
 
 const frontendURL = process.env.FRONTEND_URL;
-const BACKEND_URL = "https://tiktok-bot-kappa.vercel.app";
+const BACKEND_URL = process.env.BACKEND_URL;
 
 // CORS configuration
 app.use(cors({
