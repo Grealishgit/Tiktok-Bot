@@ -199,15 +199,19 @@ const App = () => {
                   </div>
 
                   <div className='border border-gray-700 p-4 items-center justify-center rounded-lg bg-black/50'>
-                    <div>
+                    <div className='fex flex-col gap-2'>
+                      <div>
                       <span className="text-gray-400">ID:</span>
                       <span className="ml-2">{result.id || 'N/A'}</span>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-5 text-sm">
+                      </div>
                       <div>
                         <span className="text-gray-400">Username:</span>
-                        <span className="ml-2">{result.uniqueId || 'N/A'}</span>
+                        <span className="ml-1">{result.uniqueId || 'N/A'}</span>
                       </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-5 text-sm">
+
                       <div>
                         <span className="text-gray-400">Country:</span>
                         <span className="ml-2">{result.region || 'N/A'}</span>
