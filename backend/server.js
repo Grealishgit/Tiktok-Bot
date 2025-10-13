@@ -15,7 +15,7 @@ const BACKEND_URL = process.env.BACKEND_URL;
 // CORS configuration
 app.use(cors({
     origin: ['https://tiktok-bot-downloader.vercel.app',
-        'https://tiktok-bot-zgte.onrender.com'],
+        'https://tiktok-bot-zgte.onrender.com', 'https://www.hunterdev.live'],
     // Allow frontend dev server and production
     credentials: true
 }));
