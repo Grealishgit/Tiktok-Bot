@@ -15,9 +15,11 @@ const BACKEND_URL = process.env.BACKEND_URL;
 // CORS configuration
 app.use(cors({
     origin: ['https://tiktok-bot-downloader.vercel.app',
-        'https://tiktok-bot-zgte.onrender.com', 'https://www.hunterdev.live'],
+        'https://tiktok-bot-zgte.onrender.com', 'https://www.hunterdev.live', 'http://localhost:5173'],
     // Allow frontend dev server and production
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 console.log(`Server is running on port ${PORT}`);
