@@ -198,7 +198,7 @@ const App = () => {
                     </div>
                   </div>
 
-                  <div className='border border-gray-700 md:p-4 items-center justify-center rounded-lg bg-black/50'>
+                  <div className='border border-gray-700 p-4  items-center justify-center rounded-lg bg-black/50'>
                     <div className='flex flex-col gap-2'>
                       <div>
                       <span className="text-gray-400">ID:</span>
