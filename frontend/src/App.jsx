@@ -128,7 +128,7 @@ const App = () => {
       </div>
 
       {/* Main Content */}
-      <div className="w-full  mx-auto px-4">
+      <div className="w-full mx-auto px-4">
         {/* Input Form */}
         <form onSubmit={handleSubmit} className="mb-8">
           <div className="flex md:flex-row flex-col gap-3 space-x-2">
@@ -169,10 +169,10 @@ const App = () => {
           <div className="space-y-6">
             <div className='w-full justify-between flex flex-col md:flex-row gap-4'>
 
-              <div className='md:flex-1  md:top-8 p-4 space-y-4 bg-gray-900'>
+              <div className='md:flex-1  md:top-8 md:p-4 p-2 space-y-4 bg-gray-900'>
                 {/* Info Section */}
 
-                <div className="bg-gray-900 rounded-lg p-6">
+                <div className="bg-gray-900 rounded-lg md:p-6 p-2">
                   <div className='mb-4'
                     style={{
                       backgroundImage: `url(${result.origin_cover || 'https://www.transparenttextures.com/patterns/asfalt-light.png'})`,
@@ -198,8 +198,8 @@ const App = () => {
                     </div>
                   </div>
 
-                  <div className='border border-gray-700 p-4 items-center justify-center rounded-lg bg-black/50'>
-                    <div className='fex flex-col gap-2'>
+                  <div className='border border-gray-700 md:p-4 items-center justify-center rounded-lg bg-black/50'>
+                    <div className='flex flex-col gap-2'>
                       <div>
                       <span className="text-gray-400">ID:</span>
                       <span className="ml-2">{result.id || 'N/A'}</span>
@@ -211,7 +211,6 @@ const App = () => {
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-5 text-sm">
-
                       <div>
                         <span className="text-gray-400">Country:</span>
                         <span className="ml-2">{result.region || 'N/A'}</span>
