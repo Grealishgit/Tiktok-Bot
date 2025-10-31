@@ -3,6 +3,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import { Telegraf } from "telegraf";
+import job from './lib/cron.js';
 
 dotenv.config();
 
@@ -11,6 +12,8 @@ const PORT = process.env.PORT;
 
 const frontendURL = process.env.FRONTEND_URL;
 const BACKEND_URL = process.env.BACKEND_URL;
+
+
 
 // CORS configuration
 app.use(cors({
@@ -21,6 +24,8 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+job.start();
 
 console.log(`Server is running on port ${PORT}`);
 console.log(`Frontend URL is ${frontendURL}`);
