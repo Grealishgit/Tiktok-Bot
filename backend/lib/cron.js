@@ -4,13 +4,16 @@ import https from "https"
 const job = new cron.CronJob("*/14 * * * *", function () {
     https
         .get(process.env.BACKEND_URL, (res) => {
+            res.resume(); // Consume response body to free up memory
             if (res.statusCode === 200) console.log("GET request sent successfully");
             else console.log("GET request failed", res.statusCode);
         })
         .on("error", (e) => console.error("Error while sending request", e));
 
 
-});
+}, null, true); // Start the job immediately
+
+
 
 export default job;
 
@@ -18,8 +21,7 @@ export default job;
 // Cron jobs are scheduled tasks that run periodically at fixed intervals
 // we want to send 1 GET request for every 14 minutes
 // How to define a "Schedule"?
-// You define a schedule using a cron expression, which consists of 5 fields representing:
-//! MINUTE, HOUR, DAY OF THE MONTH, MONTH, DAY OF THE WEEK
+//* */14 * * * * - Every 14 minutes//! MINUTE, HOUR, DAY OF THE MONTH, MONTH, DAY OF THE WEEK
 //? EXAMPLES && EXPLANATION:
 //* 14 **** - Every 14 minutes
 //* 0 0 * * 0 - At midnight on every Sunday

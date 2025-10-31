@@ -160,7 +160,7 @@ const App = () => {
         {/* Loading State */}
         {loading && (
           <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-4 border-b-pink-500 border-t-pink-500 border-l-pink-500 border-r-gray-600"></div>
           </div>
         )}
 
@@ -201,8 +201,8 @@ const App = () => {
                   <div className='border border-gray-700 p-4  items-center justify-center rounded-lg bg-black/50'>
                     <div className='flex flex-col gap-2'>
                       <div>
-                      <span className="text-gray-400">ID:</span>
-                      <span className="ml-2">{result.id || 'N/A'}</span>
+                        <span className="text-gray-400">ID:</span>
+                        <span className="ml-2">{result.id || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-gray-400">Username:</span>

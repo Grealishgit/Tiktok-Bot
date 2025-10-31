@@ -25,10 +25,8 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-job.start();
 
-console.log(`Server is running on port ${PORT}`);
-console.log(`Frontend URL is ${frontendURL}`);
+
 
 
 app.get('/', (req, res) => {
@@ -113,8 +111,6 @@ bot.on("text", async (ctx) => {
 });
 
 bot.launch();
-
-
 
 
 async function resolveTikTokUrl(url) {
@@ -305,4 +301,13 @@ app.get('/api/image', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`TikTok Downloader API running on port ${PORT}`);
+    console.log(`Frontend URL is ${frontendURL}`);
+
+    // Start cron job after server is ready
+    try {
+        job.start();
+        console.log('Cron job started successfully');
+    } catch (error) {
+        console.error('Failed to start cron job:', error);
+    }
 });
