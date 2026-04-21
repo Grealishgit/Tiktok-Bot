@@ -9,7 +9,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import User from './models/User.js';
+import connectDB from './config/db.js';
+
 dotenv.config();
+
+connectDB();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -177,60 +182,128 @@ async function downloadWithYtDlp(url) {
 }
 
 
+function getYouTubeCookieFlags() {
+    const cookiesPath = process.env.YTDLP_COOKIES_PATH;
+    const cookiesFromBrowser = process.env.YTDLP_COOKIES_FROM_BROWSER;
+    const flags = {};
+
+    if (cookiesPath) flags.cookies = cookiesPath;
+    if (cookiesFromBrowser) flags['cookies-from-browser'] = cookiesFromBrowser;
+
+    return flags;
+}
+
+function isYouTubeBotCheckError(err) {
+    const message = (err?.message || '').toLowerCase();
+    return (
+        message.includes('sign in to confirm') ||
+        message.includes('not a bot') ||
+        message.includes('use --cookies-from-browser') ||
+        message.includes('use --cookies')
+    );
+}
+
+
 async function downloadYouTube(url) {
+    const baseFlags = {
+        dumpSingleJson: true,
+        noWarnings: true,
+        noCheckCertificate: true,
+        addHeader: ['referer:https://www.youtube.com', 'user-agent:Mozilla/5.0'],
+        format: 'best[ext=mp4]/best', // best single-file format, no merging needed
+    };
+
+    const configuredCookieFlags = getYouTubeCookieFlags();
+    let info;
+
     try {
-        const info = await youtubeDl(url, {
-            dumpSingleJson: true,
-            noWarnings: true,
-            noCheckCertificate: true,
-            addHeader: ['referer:https://www.youtube.com', 'user-agent:Mozilla/5.0'],
-            // Pull best mp4 under 50MB where possible
-            format: 'bestvideo[ext=mp4][filesize<50M]+bestaudio[ext=m4a]/best[ext=mp4][filesize<50M]/best',
-        });
-
-        // YouTube playlists
-        if (info.entries && info.entries.length > 0) {
-            return {
-                type: 'playlist',
-                title: info.title || 'YouTube Playlist',
-                count: info.entries.length,
-                entries: info.entries.map(e => ({
-                    title: e.title,
-                    url: e.webpage_url || e.url,
-                    duration: e.duration,
-                    thumbnail: e.thumbnail,
-                }))
-            };
-        }
-
-        // Pick best mp4 format
-        let videoUrl = info.url;
-        if (!videoUrl && info.formats) {
-            const fmt = info.formats
-                .filter(f => f.ext === 'mp4' && f.vcodec !== 'none' && f.acodec !== 'none')
-                .sort((a, b) => (b.height || 0) - (a.height || 0))[0]
-                || info.formats[info.formats.length - 1];
-            videoUrl = fmt?.url;
-        }
-
-        if (!videoUrl) throw new Error('No downloadable URL found');
-
-        return {
-            type: 'video',
-            video: videoUrl,
-            title: info.title || 'YouTube Video',
-            author: info.uploader || info.channel || null,
-            duration: info.duration || null,
-            thumbnail: info.thumbnail || null,
-            view_count: info.view_count || null,
-            like_count: info.like_count || null,
-            upload_date: info.upload_date || null,
-        };
-
+        info = await youtubeDl(url, baseFlags);
     } catch (err) {
-        console.error('YouTube yt-dlp error:', err.message);
-        throw new Error('Could not fetch YouTube video. It may be age-restricted or unavailable.');
+        if (!isYouTubeBotCheckError(err)) {
+            console.error('YouTube yt-dlp error:', err.message);
+            throw new Error('Could not fetch YouTube video. It may be age-restricted or unavailable.');
+        }
+
+        const cookieAttempts = Object.keys(configuredCookieFlags).length > 0
+            ? [{ label: 'configured cookies', flags: configuredCookieFlags }]
+            : [
+                { label: 'browser cookies (chrome)', flags: { 'cookies-from-browser': 'chrome' } },
+                { label: 'browser cookies (edge)', flags: { 'cookies-from-browser': 'edge' } },
+            ];
+
+        let retried = false;
+
+        for (const attempt of cookieAttempts) {
+            try {
+                info = await youtubeDl(url, {
+                    ...baseFlags,
+                    ...attempt.flags,
+                });
+
+                retried = true;
+                break;
+            } catch (retryErr) {
+                console.error(`YouTube yt-dlp ${attempt.label} retry error:`, retryErr.message);
+            }
+        }
+
+        if (!retried || !info) {
+            if (Object.keys(configuredCookieFlags).length > 0) {
+                throw new Error('Could not fetch YouTube video with configured cookies. Refresh cookies and retry.');
+            }
+
+            throw new Error('YouTube asked for bot verification. Automatic browser-cookie retry failed. Set YTDLP_COOKIES_FROM_BROWSER (example: chrome) or YTDLP_COOKIES_PATH in backend/.env and retry.');
+        }
     }
+
+    // YouTube playlists
+    if (info.entries && info.entries.length > 0) {
+        return {
+            type: 'playlist',
+            title: info.title || 'YouTube Playlist',
+            count: info.entries.length,
+            entries: info.entries.map(e => ({
+                title: e.title,
+                url: e.webpage_url || e.url,
+                duration: e.duration,
+                thumbnail: e.thumbnail,
+            }))
+        };
+    }
+
+    // Pick best SINGLE-FILE format (video+audio combined, no ffmpeg merge needed)
+    let videoUrl = null;
+
+    if (info.formats) {
+        // Priority: combined mp4 → any combined format → fallback to info.url
+        const combined = info.formats
+            .filter(f =>
+                f.vcodec !== 'none' &&
+                f.acodec !== 'none' &&
+                f.url
+            )
+            .sort((a, b) => (b.height || 0) - (a.height || 0)); // highest quality first
+
+        if (combined.length > 0) {
+            videoUrl = combined[0].url;
+        }
+    }
+
+    // Final fallback
+    if (!videoUrl) videoUrl = info.url;
+    if (!videoUrl) throw new Error('No downloadable URL found');
+
+    return {
+        type: 'video',
+        video: videoUrl,
+        title: info.title || 'YouTube Video',
+        author: info.uploader || info.channel || null,
+        duration: info.duration || null,
+        thumbnail: info.thumbnail || null,
+        view_count: info.view_count || null,
+        like_count: info.like_count || null,
+        upload_date: info.upload_date || null,
+    };
 }
 
 // ─── Master download function ─────────────────────────────────────────────────
@@ -246,15 +319,40 @@ async function downloadMedia(url) {
 // ─── Telegram Bot ─────────────────────────────────────────────────────────────
 const bot = new Telegraf(process.env.TOKEN);
 
-bot.start((ctx) => {
-    ctx.reply(
-        '👋 Welcome! Send me a link from:\n\n' +
-        '🎵 TikTok\n📸 Instagram (reels, posts, carousels)\n📘 Facebook (reels, videos)\n▶️ YouTube (videos, shorts)\n\n' +
-        'And I\'ll download it for you!'
-    );
+bot.start(async (ctx) => {
+    try {
+        const { total, monthly } = await getBotStats();
+        await ctx.reply(
+            `👋 Welcome!\n\n` +
+            `📊 Bot Stats:\n` +
+            `👥 ${total.toLocaleString()} total users\n` +
+            `📅 ${monthly.toLocaleString()} joined this month\n\n` +
+            `🎵 TikTok\n📸 Instagram\n📘 Facebook\n▶️ YouTube\n\n` +
+            `Send me a link and I'll download it for you!`
+        );
+    } catch (err) {
+        ctx.reply('👋 Welcome! Send me a TikTok, Instagram, Facebook or YouTube link!');
+    }
 });
 
 bot.on('text', async (ctx) => {
+    const userId = ctx.from.id;
+    const username = ctx.from.username;
+    const firstName = ctx.from.first_name;
+
+    // Save to DB (upsert = insert if not exists, update if exists)
+    await User.findOneAndUpdate(
+        { telegramId: userId },
+        {
+            telegramId: userId,
+            username,
+            firstName,
+            lastActive: new Date(),
+            $inc: { messageCount: 1 }, // increment usage count
+            $setOnInsert: { joinedAt: new Date() } // only set on first insert
+        },
+        { upsert: true, returnDocument: 'after' }
+    );
     const url = ctx.message.text.trim();
     const platform = detectPlatform(url);
 
@@ -405,8 +503,47 @@ app.get('/api/image', async (req, res) => {
     }
 });
 
+
+app.get('/api/stats', async (req, res) => {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+    const [total, monthly, active] = await Promise.all([
+        User.countDocuments(),
+        User.countDocuments({ joinedAt: { $gte: startOfMonth } }),      // joined this month
+        User.countDocuments({ lastActive: { $gte: thirtyDaysAgo } }),   // active last 30 days
+    ]);
+
+    res.json({ total, monthly, active });
+});
+
+// ─── Bot stats helper ─────────────────────────────────────────────────────────
+async function getBotStats() {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const [total, monthly] = await Promise.all([
+        User.countDocuments(),
+        User.countDocuments({ joinedAt: { $gte: startOfMonth } }),
+    ]);
+    return { total, monthly };
+}
+
+async function updateBotDescription() {
+    try {
+        const { total } = await getBotStats();
+        await bot.telegram.setMyDescription(
+            `⚡ Fast TikTok, Instagram, Facebook & YouTube downloader\n\n👥 ${total.toLocaleString()} total users`
+        );
+        console.log('Bot description updated');
+    } catch (err) {
+        console.error('Failed to update bot description:', err.message);
+    }
+}
+
+
 // ─── Start server ─────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Multi-Platform Downloader API running on port ${PORT}`);
     console.log(`Frontend URL: ${frontendURL}`);
 
@@ -419,4 +556,8 @@ app.listen(PORT, () => {
 
     bot.launch();
     console.log('Telegram bot started');
+
+    // Update description once on startup, then every 6 hours
+    await updateBotDescription();
+    setInterval(updateBotDescription, 6 * 60 * 60 * 1000);
 });
