@@ -27,8 +27,6 @@ app.use(cors({
 
 
 
-
-
 app.get('/', (req, res) => {
     res.send('TikTok Downloader API is running');
 });
@@ -37,14 +35,13 @@ app.get('/', (req, res) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// 🔑 Replace with your bot token from BotFather
 const bot = new Telegraf(process.env.TOKEN);
-// console.log(TOKEN);
+
 
 // Start command
 bot.start((ctx) => {
     console.log('Start command received');
-    ctx.reply("👋 Yooh paste hio link hapa then uchill 😂 ikifail toka hapa💀.");
+    ctx.reply("Paste your tikto link here and wait for magic!");
 });
 
 // Handle TikTok links
@@ -53,11 +50,11 @@ bot.on("text", async (ctx) => {
 
     // Check if it's TikTok
     if (!url.includes("tiktok.com")) {
-        return ctx.reply("❌ Please send a valid TikTok link.");
+        return ctx.reply("Please send a valid TikTok link.");
     }
 
     try {
-        ctx.reply("⏳ Thinking😂💀...");
+        ctx.reply("Please wait...");
 
         // Call local API
         const apiResponse = await axios.post(`${BACKEND_URL}/api/download`, { url });
@@ -74,7 +71,7 @@ bot.on("text", async (ctx) => {
                 const media = chunk.map((imageUrl, index) => ({
                     type: 'photo',
                     media: imageUrl,
-                    caption: (i === 0 && index === 0) ? `✅ Here’s your TikTok carousel!\n${result.title}\n Made By Hunter😂😂` : undefined
+                    caption: (i === 0 && index === 0) ? `Here’s your TikTok carousel!\n${result.title}\n Made By Hunter` : undefined
                 }));
 
                 try {
@@ -99,18 +96,17 @@ bot.on("text", async (ctx) => {
         } else if (result.type === 'video') {
             // Send video
             await ctx.replyWithVideo({ url: result.video },
-                { caption: `✅ Here’s your TikTok video!\n${result.title}\nMade By HunterDev😂😂!` });
+                { caption: `Here’s your TikTok video!\n${result.title}\nMade By HunterDev!` });
         } else {
-            ctx.reply("⚠️ Unknown media type.");
+            ctx.reply("Unknown media type.");
         }
 
     } catch (err) {
         console.error(err);
-        ctx.reply("❌ Error fetching the TikTok. Try again later or get the fuck out.");
+        ctx.reply("Error fetching the TikTok. Try again later or get the fuck out.");
     }
 });
 
-bot.launch();
 
 
 async function resolveTikTokUrl(url) {
@@ -310,4 +306,7 @@ app.listen(PORT, () => {
     } catch (error) {
         console.error('Failed to start cron job:', error);
     }
+
+    bot.launch();
+    console.log('Telegram bot started successfully');
 });

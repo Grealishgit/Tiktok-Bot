@@ -14,7 +14,6 @@ app.get('/', (req, res) => {
     res.send('TikTok Downloader Bot is running');
 });
 
-// 🔑 Replace with your bot token from BotFather
 const bot = new Telegraf(process.env.TOKEN);
 // console.log(TOKEN);
 
@@ -30,11 +29,11 @@ bot.on("text", async (ctx) => {
 
     // Check if it's TikTok
     if (!url.includes("tiktok.com")) {
-        return ctx.reply("❌ Please send a valid TikTok link.");
+        return ctx.reply("Please send a valid TikTok link.");
     }
 
     try {
-        ctx.reply("⏳ Downloading...");
+        ctx.reply("Downloading...");
 
         // Call local API
         const apiResponse = await axios.post('http://localhost:4000/api/download', { url });
@@ -46,13 +45,13 @@ bot.on("text", async (ctx) => {
             const media = result.images.map((imageUrl, index) => ({
                 type: 'photo',
                 media: imageUrl,
-                caption: index === 0 ? `✅ Here’s your TikTok carousel! Made By Hunter😂😂\n${result.title}` : undefined
+                caption: index === 0 ? `Here’s your TikTok carousel! Made By Hunter\n${result.title}` : undefined
             }));
             await ctx.replyWithMediaGroup(media);
         } else if (result.type === 'video') {
             // Send video
             await ctx.replyWithVideo({ url: result.video },
-                { caption: `✅ Here’s your TikTok video! Made By Hunter😂😂\n${result.title}` });
+                { caption: `Here’s your TikTok video! Made By Hunter\n${result.title}` });
         } else {
             ctx.reply("⚠️ Unknown media type.");
         }
