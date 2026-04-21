@@ -4,65 +4,271 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import { Telegraf } from "telegraf";
 import job from './lib/cron.js';
+import youtubeDl from 'youtube-dl-exec';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT;
-
 const frontendURL = process.env.FRONTEND_URL;
 const BACKEND_URL = process.env.BACKEND_URL;
-
-
 
 // CORS configuration
 app.use(cors({
     origin: ['https://tiktok-bot-downloader.vercel.app',
         'https://tiktok-bot-zgte.onrender.com', 'https://www.hunterdev.live', 'http://localhost:5173'],
-    // Allow frontend dev server and production
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-
-
-app.get('/', (req, res) => {
-    res.send('TikTok Downloader API is running');
-});
-
-// Middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-const bot = new Telegraf(process.env.TOKEN);
-
-
-// Start command
-bot.start((ctx) => {
-    console.log('Start command received');
-    ctx.reply("Paste your tikto link here and wait for magic!");
+app.get('/', (req, res) => {
+    res.send('Multi-Platform Downloader API is running');
 });
 
-// Handle TikTok links
-bot.on("text", async (ctx) => {
-    const url = ctx.message.text;
+// ─── Platform detection ───────────────────────────────────────────────────────
+function detectPlatform(url) {
+    if (url.includes('tiktok.com') || url.includes('vm.tiktok.com') || url.includes('vt.tiktok.com')) return 'tiktok';
+    if (url.includes('instagram.com') || url.includes('instagr.am')) return 'instagram';
+    if (url.includes('facebook.com') || url.includes('fb.watch') || url.includes('fb.com')) return 'facebook';
+    if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
+    return null;
+}
 
-    // Check if it's TikTok
-    if (!url.includes("tiktok.com")) {
-        return ctx.reply("Please send a valid TikTok link.");
+// ─── TikTok downloader (tikwm) ────────────────────────────────────────────────
+async function downloadTikTok(url) {
+    // Resolve short links
+    if (url.includes('vm.tiktok.com') || url.includes('vt.tiktok.com')) {
+        try {
+            const response = await axios.get(url, {
+                maxRedirects: 0,
+                validateStatus: status => status === 301 || status === 302
+            });
+            if (response.headers.location) url = response.headers.location;
+        } catch (err) {
+            throw new Error('Failed to resolve short TikTok URL');
+        }
     }
 
+    const apiUrl = `https://tikwm.com/api?url=${encodeURIComponent(url)}`;
+    const { data } = await axios.get(apiUrl);
+
+    if (data.code !== 0 || !data.data) throw new Error('Could not fetch TikTok (maybe private?)');
+
+    const d = data.data;
+    const base = {
+        id: d.id,
+        title: d.title || 'TikTok',
+        region: d.region,
+        author: d.author,
+        digg_count: d.digg_count,
+        comment_count: d.comment_count,
+        share_count: d.share_count,
+        play_count: d.play_count,
+        download_count: d.download_count,
+        duration: d.duration,
+        create_time: d.create_time,
+        origin_cover: d.origin_cover,
+        original: d.original,
+    };
+
+    if (d.images && d.images.length > 0) {
+        return { ...base, type: 'carousel', images: d.images };
+    } else if (d.play) {
+        return { ...base, type: 'video', video: d.play };
+    }
+
+    throw new Error('No media found in this TikTok');
+}
+
+// ─── Instagram / Facebook downloader (yt-dlp) ────────────────────────────────
+async function downloadWithYtDlp(url) {
     try {
-        ctx.reply("Please wait...");
+        // First, get info without downloading
+        const info = await youtubeDl(url, {
+            dumpSingleJson: true,
+            noWarnings: true,
+            noCallHome: true,
+            noCheckCertificate: true,
+            preferFreeFormats: true,
+            addHeader: ['referer:' + url, 'user-agent:Mozilla/5.0'],
+        });
 
-        // Call local API
-        const apiResponse = await axios.post(`${BACKEND_URL}/api/download`, { url });
+        // Handle playlist / multi-image (Instagram carousel)
+        if (info.entries && info.entries.length > 0) {
+            const images = [];
+            const videos = [];
 
-        const result = apiResponse.data;
+            for (const entry of info.entries) {
+                if (entry.ext === 'jpg' || entry.ext === 'png' || entry.ext === 'webp'
+                    || (entry.thumbnail && !entry.url?.includes('.mp4'))) {
+                    images.push(entry.url || entry.thumbnail);
+                } else {
+                    videos.push(entry.url);
+                }
+            }
+
+            if (images.length > 0) {
+                return {
+                    type: 'carousel',
+                    images,
+                    title: info.title || 'Post',
+                    author: info.uploader || info.channel || null,
+                };
+            }
+
+            if (videos.length > 0) {
+                return {
+                    type: 'video',
+                    video: videos[0],
+                    title: info.title || 'Video',
+                    author: info.uploader || info.channel || null,
+                };
+            }
+        }
+
+        // Single media
+        const isImage = info.ext === 'jpg' || info.ext === 'png'
+            || info.ext === 'webp' || info.vcodec === 'none';
+
+        if (isImage) {
+            return {
+                type: 'carousel',
+                images: [info.url || info.thumbnail],
+                title: info.title || 'Image',
+                author: info.uploader || null,
+            };
+        }
+
+        // Get best video URL
+        let videoUrl = info.url;
+        if (!videoUrl && info.formats) {
+            // Pick best mp4 format with both video+audio
+            const fmt = info.formats
+                .filter(f => f.ext === 'mp4' && f.vcodec !== 'none' && f.acodec !== 'none')
+                .sort((a, b) => (b.filesize || 0) - (a.filesize || 0))[0]
+                || info.formats[info.formats.length - 1];
+            videoUrl = fmt?.url;
+        }
+
+        if (!videoUrl) throw new Error('No downloadable URL found');
+
+        return {
+            type: 'video',
+            video: videoUrl,
+            title: info.title || 'Video',
+            author: info.uploader || info.channel || null,
+            duration: info.duration || null,
+        };
+
+    } catch (err) {
+        console.error('yt-dlp error:', err.message);
+        throw new Error('Could not fetch media. The post may be private or unsupported.');
+    }
+}
+
+
+async function downloadYouTube(url) {
+    try {
+        const info = await youtubeDl(url, {
+            dumpSingleJson: true,
+            noWarnings: true,
+            noCheckCertificate: true,
+            addHeader: ['referer:https://www.youtube.com', 'user-agent:Mozilla/5.0'],
+            // Pull best mp4 under 50MB where possible
+            format: 'bestvideo[ext=mp4][filesize<50M]+bestaudio[ext=m4a]/best[ext=mp4][filesize<50M]/best',
+        });
+
+        // YouTube playlists
+        if (info.entries && info.entries.length > 0) {
+            return {
+                type: 'playlist',
+                title: info.title || 'YouTube Playlist',
+                count: info.entries.length,
+                entries: info.entries.map(e => ({
+                    title: e.title,
+                    url: e.webpage_url || e.url,
+                    duration: e.duration,
+                    thumbnail: e.thumbnail,
+                }))
+            };
+        }
+
+        // Pick best mp4 format
+        let videoUrl = info.url;
+        if (!videoUrl && info.formats) {
+            const fmt = info.formats
+                .filter(f => f.ext === 'mp4' && f.vcodec !== 'none' && f.acodec !== 'none')
+                .sort((a, b) => (b.height || 0) - (a.height || 0))[0]
+                || info.formats[info.formats.length - 1];
+            videoUrl = fmt?.url;
+        }
+
+        if (!videoUrl) throw new Error('No downloadable URL found');
+
+        return {
+            type: 'video',
+            video: videoUrl,
+            title: info.title || 'YouTube Video',
+            author: info.uploader || info.channel || null,
+            duration: info.duration || null,
+            thumbnail: info.thumbnail || null,
+            view_count: info.view_count || null,
+            like_count: info.like_count || null,
+            upload_date: info.upload_date || null,
+        };
+
+    } catch (err) {
+        console.error('YouTube yt-dlp error:', err.message);
+        throw new Error('Could not fetch YouTube video. It may be age-restricted or unavailable.');
+    }
+}
+
+// ─── Master download function ─────────────────────────────────────────────────
+async function downloadMedia(url) {
+    const platform = detectPlatform(url);
+    if (!platform) throw new Error('Unsupported platform. Send a TikTok, Instagram, Facebook, or YouTube link.');
+
+    if (platform === 'tiktok') return downloadTikTok(url);
+    if (platform === 'youtube') return downloadYouTube(url);
+    return downloadWithYtDlp(url);
+}
+
+// ─── Telegram Bot ─────────────────────────────────────────────────────────────
+const bot = new Telegraf(process.env.TOKEN);
+
+bot.start((ctx) => {
+    ctx.reply(
+        '👋 Welcome! Send me a link from:\n\n' +
+        '🎵 TikTok\n📸 Instagram (reels, posts, carousels)\n📘 Facebook (reels, videos)\n▶️ YouTube (videos, shorts)\n\n' +
+        'And I\'ll download it for you!'
+    );
+});
+
+bot.on('text', async (ctx) => {
+    const url = ctx.message.text.trim();
+    const platform = detectPlatform(url);
+
+    if (!platform) {
+        return ctx.reply('Please send a valid TikTok, Instagram, or Facebook link.');
+    }
+
+    const platformEmoji = { tiktok: '🎵', instagram: '📸', facebook: '📘', youtube: '▶️' }[platform];
+    await ctx.reply(`${platformEmoji} Fetching your ${platform} media, please wait...`);
+
+    try {
+        const result = await downloadMedia(url);
 
         if (result.type === 'carousel') {
-            // Send images as media group (max 10 per group)
             const images = result.images;
             const maxPerGroup = 10;
 
@@ -71,222 +277,126 @@ bot.on("text", async (ctx) => {
                 const media = chunk.map((imageUrl, index) => ({
                     type: 'photo',
                     media: imageUrl,
-                    caption: (i === 0 && index === 0) ? `Here’s your TikTok carousel!\n${result.title}\n Made By Hunter` : undefined
+                    caption: (i === 0 && index === 0)
+                        ? `📸 ${result.title}\n\nMade by HunterDev`
+                        : undefined
                 }));
 
                 try {
                     await ctx.replyWithMediaGroup(media);
-                    // Small delay between groups to avoid rate limits
                     if (i + maxPerGroup < images.length) {
                         await new Promise(resolve => setTimeout(resolve, 1000));
                     }
-                } catch (error) {
-                    console.error('Error sending media group:', error);
-                    // If media group fails, try sending individually
-                    for (const imageUrl of chunk) {
+                } catch (groupErr) {
+                    console.error('Media group failed, sending individually:', groupErr.message);
+                    for (const imgUrl of chunk) {
                         try {
-                            await ctx.replyWithPhoto(imageUrl);
+                            await ctx.replyWithPhoto(imgUrl);
                             await new Promise(resolve => setTimeout(resolve, 500));
-                        } catch (photoError) {
-                            console.error('Error sending individual photo:', photoError);
+                        } catch (photoErr) {
+                            console.error('Individual photo failed:', photoErr.message);
                         }
                     }
                 }
             }
+
         } else if (result.type === 'video') {
-            // Send video
-            await ctx.replyWithVideo({ url: result.video },
-                { caption: `Here’s your TikTok video!\n${result.title}\nMade By HunterDev!` });
-        } else {
-            ctx.reply("Unknown media type.");
+            try {
+                await ctx.replyWithVideo(
+                    { url: result.video },
+                    { caption: `🎬 ${result.title}\n\nMade by HunterDev` }
+                );
+            } catch (videoErr) {
+                // Telegram has a 50MB bot upload limit — fall back to link
+                console.error('Video send failed (likely too large):', videoErr.message);
+                await ctx.reply(
+                    `⚠️ The video is too large for Telegram to send directly.\n\n` +
+                    `🔗 Direct link (tap & hold to save):\n${result.video}`
+                );
+            }
+        } else if (result.type === 'playlist') {
+            // Telegram can't bulk-send a playlist, so send a summary with links
+            const lines = result.entries.slice(0, 20).map((e, i) =>
+                `${i + 1}. ${e.title} — ${e.url}`
+            );
+            const truncated = result.entries.length > 20
+                ? `\n\n...and ${result.entries.length - 20} more.` : '';
+
+            await ctx.reply(
+                `▶️ Playlist: ${result.title} (${result.count} videos)\n\n` +
+                lines.join('\n') + truncated
+            );
         }
 
     } catch (err) {
-        console.error(err);
-        ctx.reply("Error fetching the TikTok. Try again later or get the fuck out.");
+        console.error('Bot error:', err.message);
+        ctx.reply(`${err.message}`);
     }
 });
 
+// ─── API Routes ───────────────────────────────────────────────────────────────
 
-
-async function resolveTikTokUrl(url) {
-    try {
-        const response = await axios.get(url, {
-            maxRedirects: 0,
-            validateStatus: (status) => status === 301 || status === 302
-        });
-
-        const finalUrl = response.headers.location;
-        return finalUrl || url;
-    } catch (error) {
-        console.error('Failed to resolve TikTok URL:', error.message);
-        return url;
-    }
-}
-
-// API endpoint to download TikTok videos
-app.post('/api/download/video', async (req, res) => {
-    try {
-        const url = req.body?.url;
-
-        if (!url || !url.includes('tiktok.com')) {
-            return res.status(400).json({ error: 'Please provide a valid TikTok URL' });
-        }
-
-        const apiUrl = `https://tikwm.com/api?url=${encodeURIComponent(url)}`;
-        const { data } = await axios.get(apiUrl);
-
-        if (data.code !== 0 || !data.data || !data.data.play) {
-            return res.status(404).json({ error: 'Could not fetch the video. Maybe it\'s private or not a video?' });
-        }
-
-        res.json({
-            video: data.data.play,
-            title: data.data.title || 'TikTok Video'
-        });
-
-        console.log(data);
-
-    } catch (error) {
-        console.error('Video download error:', error);
-        res.status(500).json({ error: 'Server error while downloading video' });
-    }
-});
-
-// API endpoint to download TikTok carousels
-app.post('/api/download/carousel', async (req, res) => {
-    try {
-        const url = req.body?.url;
-
-
-        if (!url || !url.includes('tiktok.com')) {
-            return res.status(400).json({ error: 'Please provide a valid TikTok URL' });
-        }
-
-        const apiUrl = `https://tikwm.com/api?url=${encodeURIComponent(url)}`;
-        const { data } = await axios.get(apiUrl);
-
-        if (data.code !== 0 || !data.data || !data.data.images || data.data.images.length === 0) {
-            return res.status(404).json({ error: 'Could not fetch the carousel. Maybe it\'s private or not a carousel?' });
-        }
-
-        res.json({
-            images: data.data.images,
-            title: data.data.title || 'TikTok Carousel'
-        });
-
-    } catch (error) {
-        console.error('Carousel download error:', error);
-        res.status(500).json({ error: 'Server error while downloading carousel' });
-    }
-});
-
-// General download endpoint (detects type)
+// General download endpoint — all platforms
 app.post('/api/download', async (req, res) => {
     try {
-        let url = req.body?.url;
+        const url = req.body?.url;
+        if (!url) return res.status(400).json({ error: 'Please provide a URL' });
 
-        if (!url) {
-            return res.status(400).json({ error: 'Please provide a TikTok URL' });
-        }
+        const platform = detectPlatform(url);
+        if (!platform) return res.status(400).json({ error: 'Unsupported platform' });
 
-        // 🔹 Resolve short links (vm.tiktok.com, vt.tiktok.com, etc.)
-        if (url.includes('vm.tiktok.com') || url.includes('vt.tiktok.com')) {
-            try {
-                const response = await axios.get(url, {
-                    maxRedirects: 0,
-                    validateStatus: status => status === 301 || status === 302
-                });
-
-                if (response.headers.location) {
-                    url = response.headers.location;
-                }
-            } catch (err) {
-                console.error("Short link resolution failed:", err.message);
-                return res.status(400).json({ error: 'Failed to resolve short TikTok URL' });
-            }
-        }
-
-        // ✅ Now check again after resolving
-        if (!url.includes('tiktok.com')) {
-            return res.status(400).json({ error: 'Please provide a valid TikTok URL' });
-        }
-
-        // Call tikwm API
-        const apiUrl = `https://tikwm.com/api?url=${encodeURIComponent(url)}`;
-        const { data } = await axios.get(apiUrl);
-
-        if (data.code !== 0 || !data.data) {
-            return res.status(404).json({ error: 'Could not fetch TikTok (maybe private?)' });
-        }
-
-        if (data.data.images && data.data.images.length > 0) {
-            return res.json({
-                type: 'carousel',
-                images: data.data.images,
-                title: data.data.title || 'TikTok Carousel',
-                id: data.data.id,
-                region: data.data.region,
-                author: data.data.author,
-                digg_count: data.data.digg_count,
-                comment_count: data.data.comment_count,
-                download_count: data.data.download_count,
-                original: data.data.original,
-                origin_cover: data.data.origin_cover,
-                share_count: data.data.share_count,
-                play_count: data.data.play_count,
-                duration: data.data.duration,
-                create_time: data.data.create_time,
-            });
-        } else if (data.data.play) {
-            return res.json({
-                type: 'video',
-                video: data.data.play,
-                title: data.data.title || 'TikTok Video',
-                id: data.data.id,
-                region: data.data.region,
-                author: data.data.author,
-                digg_count: data.data.digg_count,
-                comment_count: data.data.comment_count,
-                download_count: data.data.download_count,
-                original: data.data.original,
-                origin_cover: data.data.origin_cover,
-                share_count: data.data.share_count,
-                play_count: data.data.play_count,
-                duration: data.data.duration,
-                create_time: data.data.create_time,
-            });
-        } else {
-            return res.status(404).json({ error: 'No media found in this TikTok' });
-        }
+        const result = await downloadMedia(url);
+        res.json({ platform, ...result });
 
     } catch (error) {
         console.error('Download error:', error.message);
-        res.status(500).json({ error: 'Server error while downloading' });
+        res.status(500).json({ error: error.message || 'Server error while downloading' });
     }
 });
 
-// Proxy images to bypass CORS/network issues
+// TikTok video only
+app.post('/api/download/video', async (req, res) => {
+    try {
+        const url = req.body?.url;
+        if (!url || !url.includes('tiktok.com')) {
+            return res.status(400).json({ error: 'Please provide a valid TikTok URL' });
+        }
+        const result = await downloadTikTok(url);
+        if (result.type !== 'video') return res.status(404).json({ error: 'Not a video post' });
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// TikTok carousel only
+app.post('/api/download/carousel', async (req, res) => {
+    try {
+        const url = req.body?.url;
+        if (!url || !url.includes('tiktok.com')) {
+            return res.status(400).json({ error: 'Please provide a valid TikTok URL' });
+        }
+        const result = await downloadTikTok(url);
+        if (result.type !== 'carousel') return res.status(404).json({ error: 'Not a carousel post' });
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Image proxy (bypass CORS)
 app.get('/api/image', async (req, res) => {
     try {
         const imageUrl = req.query.url;
-        if (!imageUrl) {
-            return res.status(400).json({ error: 'Image URL required' });
-        }
+        if (!imageUrl) return res.status(400).json({ error: 'Image URL required' });
 
-        // Fetch the image from TikTok CDN
         const response = await axios.get(imageUrl, {
             responseType: 'stream',
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
         });
 
-        // Set appropriate headers
         res.setHeader('Content-Type', response.headers['content-type'] || 'image/jpeg');
-        res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
-
-        // Pipe the image stream to response
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         response.data.pipe(res);
 
     } catch (error) {
@@ -295,18 +405,18 @@ app.get('/api/image', async (req, res) => {
     }
 });
 
+// ─── Start server ─────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-    console.log(`TikTok Downloader API running on port ${PORT}`);
-    console.log(`Frontend URL is ${frontendURL}`);
+    console.log(`Multi-Platform Downloader API running on port ${PORT}`);
+    console.log(`Frontend URL: ${frontendURL}`);
 
-    // Start cron job after server is ready
     try {
         job.start();
-        console.log('Cron job started successfully');
+        console.log('Cron job started');
     } catch (error) {
-        console.error('Failed to start cron job:', error);
+        console.error('Cron job failed to start:', error);
     }
 
     bot.launch();
-    console.log('Telegram bot started successfully');
+    console.log('Telegram bot started');
 });

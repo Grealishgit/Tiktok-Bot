@@ -20,7 +20,8 @@
     "cron": "^4.3.3",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "telegraf": "^4.16.3"
+    "telegraf": "^4.16.3",
+    "youtube-dl-exec": "^3.1.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
