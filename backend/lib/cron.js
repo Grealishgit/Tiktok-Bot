@@ -1,14 +1,37 @@
 import cron from "cron";
-import https from "https"
+import http from "http";
+import https from "https";
+
+function getHttpClient(urlString) {
+    const parsedUrl = new URL(urlString);
+
+    if (parsedUrl.protocol === "https:") return { client: https, parsedUrl };
+    if (parsedUrl.protocol === "http:") return { client: http, parsedUrl };
+
+    throw new Error(`Unsupported protocol: ${parsedUrl.protocol}`);
+}
 
 const job = new cron.CronJob("*/14 * * * *", function () {
-    https
-        .get(process.env.BACKEND_URL, (res) => {
-            res.resume(); // Consume response body to free up memory
-            if (res.statusCode === 200) console.log("GET request sent successfully");
-            else console.log("GET request failed", res.statusCode);
-        })
-        .on("error", (e) => console.error("Error while sending request", e));
+    const backendUrl = process.env.BACKEND_URL;
+
+    if (!backendUrl) {
+        console.error("[Cron] BACKEND_URL is not set");
+        return;
+    }
+
+    try {
+        const { client, parsedUrl } = getHttpClient(backendUrl);
+
+        client
+            .get(parsedUrl, (res) => {
+                res.resume(); // Consume response body to free up memory
+                if (res.statusCode === 200) console.log("GET request sent successfully");
+                else console.log("GET request failed", res.statusCode);
+            })
+            .on("error", (e) => console.error("Error while sending request", e));
+    } catch (error) {
+        console.error("[Cron] invalid BACKEND_URL:", error.message);
+    }
 
 
 }, null, true); // Start the job immediately
