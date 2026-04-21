@@ -43,7 +43,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/', (req, res) => {
-    res.send('Multi-Platform Downloader API is running');
+    res.send('Multi-Platform Downloader API is running!');
 });
 
 // ─── Platform detection ───────────────────────────────────────────────────────
