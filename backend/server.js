@@ -23,6 +23,12 @@ const app = express();
 const PORT = process.env.PORT;
 const frontendURL = process.env.FRONTEND_URL;
 const BACKEND_URL = process.env.BACKEND_URL;
+const DOWNLOAD_TIMEOUT_MS = 2 * 60 * 1000;
+const BOT_HANDLER_TIMEOUT_MS = DOWNLOAD_TIMEOUT_MS + 30 * 1000;
+const YTDLP_TIMEOUT_OPTIONS = {
+    timeout: DOWNLOAD_TIMEOUT_MS,
+    killSignal: 'SIGKILL'
+};
 
 // CORS configuration
 app.use(cors({
@@ -47,6 +53,49 @@ function detectPlatform(url) {
     if (url.includes('facebook.com') || url.includes('fb.watch') || url.includes('fb.com')) return 'facebook';
     if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
     return null;
+}
+
+function createDownloadTimeoutError() {
+    const error = new Error('Failed to download the video after 2 minutes. Please try again.');
+    error.name = 'DownloadTimeoutError';
+    return error;
+}
+
+function isDownloadTimeoutError(err) {
+    return err?.name === 'DownloadTimeoutError';
+}
+
+function isAnyTimeoutError(err) {
+    const message = (err?.message || '').toLowerCase();
+    return (
+        err?.code === 'ETIMEDOUT' ||
+        message.includes('timed out') ||
+        message.includes('timeout') ||
+        message.includes('promise timed out')
+    );
+}
+
+async function runYtDlp(url, flags) {
+    try {
+        return await youtubeDl(url, flags, YTDLP_TIMEOUT_OPTIONS);
+    } catch (err) {
+        if (isAnyTimeoutError(err)) throw createDownloadTimeoutError();
+        throw err;
+    }
+}
+
+async function withDownloadTimeout(promise) {
+    let timeoutId;
+
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(createDownloadTimeoutError()), DOWNLOAD_TIMEOUT_MS);
+    });
+
+    try {
+        return await Promise.race([promise, timeoutPromise]);
+    } finally {
+        clearTimeout(timeoutId);
+    }
 }
 
 // ─── TikTok downloader (tikwm) ────────────────────────────────────────────────
@@ -99,7 +148,7 @@ async function downloadTikTok(url) {
 async function downloadWithYtDlp(url) {
     try {
         // First, get info without downloading
-        const info = await youtubeDl(url, {
+        const info = await runYtDlp(url, {
             dumpSingleJson: true,
             noWarnings: true,
             noCallHome: true,
@@ -176,6 +225,7 @@ async function downloadWithYtDlp(url) {
         };
 
     } catch (err) {
+        if (isDownloadTimeoutError(err)) throw err;
         console.error('yt-dlp error:', err.message);
         throw new Error('Could not fetch media. The post may be private or unsupported.');
     }
@@ -217,8 +267,10 @@ async function downloadYouTube(url) {
     let info;
 
     try {
-        info = await youtubeDl(url, baseFlags);
+        info = await runYtDlp(url, baseFlags);
     } catch (err) {
+        if (isDownloadTimeoutError(err)) throw err;
+
         if (!isYouTubeBotCheckError(err)) {
             console.error('YouTube yt-dlp error:', err.message);
             throw new Error('Could not fetch YouTube video. It may be age-restricted or unavailable.');
@@ -235,7 +287,7 @@ async function downloadYouTube(url) {
 
         for (const attempt of cookieAttempts) {
             try {
-                info = await youtubeDl(url, {
+                info = await runYtDlp(url, {
                     ...baseFlags,
                     ...attempt.flags,
                 });
@@ -243,6 +295,7 @@ async function downloadYouTube(url) {
                 retried = true;
                 break;
             } catch (retryErr) {
+                if (isDownloadTimeoutError(retryErr)) throw retryErr;
                 console.error(`YouTube yt-dlp ${attempt.label} retry error:`, retryErr.message);
             }
         }
@@ -317,7 +370,23 @@ async function downloadMedia(url) {
 }
 
 // ─── Telegram Bot ─────────────────────────────────────────────────────────────
-const bot = new Telegraf(process.env.TOKEN);
+const bot = new Telegraf(process.env.TOKEN, { handlerTimeout: BOT_HANDLER_TIMEOUT_MS });
+
+bot.catch(async (err, ctx) => {
+    console.error('Unhandled bot middleware error:', err.message);
+
+    if (ctx?.reply) {
+        const fallbackMessage = isAnyTimeoutError(err) || isDownloadTimeoutError(err)
+            ? 'Failed to download the video after 2 minutes. Please try again.'
+            : 'Failed to process your request. Please try again.';
+
+        try {
+            await ctx.reply(fallbackMessage);
+        } catch (replyErr) {
+            console.error('Failed to send fallback error message:', replyErr.message);
+        }
+    }
+});
 
 bot.start(async (ctx) => {
     try {
@@ -331,40 +400,46 @@ bot.start(async (ctx) => {
             `Send me a link and I'll download it for you!`
         );
     } catch (err) {
-        ctx.reply('👋 Welcome! Send me a TikTok, Instagram, Facebook or YouTube link!');
+        try {
+            await ctx.reply('👋 Welcome! Send me a TikTok, Instagram, Facebook or YouTube link!');
+        } catch (replyErr) {
+            console.error('Start command reply error:', replyErr.message);
+        }
     }
 });
 
 bot.on('text', async (ctx) => {
-    const userId = ctx.from.id;
-    const username = ctx.from.username;
-    const firstName = ctx.from.first_name;
-
-    // Save to DB (upsert = insert if not exists, update if exists)
-    await User.findOneAndUpdate(
-        { telegramId: userId },
-        {
-            telegramId: userId,
-            username,
-            firstName,
-            lastActive: new Date(),
-            $inc: { messageCount: 1 }, // increment usage count
-            $setOnInsert: { joinedAt: new Date() } // only set on first insert
-        },
-        { upsert: true, returnDocument: 'after' }
-    );
-    const url = ctx.message.text.trim();
-    const platform = detectPlatform(url);
-
-    if (!platform) {
-        return ctx.reply('Please send a valid TikTok, Instagram, or Facebook link.');
-    }
-
-    const platformEmoji = { tiktok: '🎵', instagram: '📸', facebook: '📘', youtube: '▶️' }[platform];
-    await ctx.reply(`${platformEmoji} Fetching your ${platform} media, please wait...`);
-
     try {
-        const result = await downloadMedia(url);
+        const userId = ctx.from.id;
+        const username = ctx.from.username;
+        const firstName = ctx.from.first_name;
+
+        // Save to DB (upsert = insert if not exists, update if exists)
+        await User.findOneAndUpdate(
+            { telegramId: userId },
+            {
+                telegramId: userId,
+                username,
+                firstName,
+                lastActive: new Date(),
+                $inc: { messageCount: 1 }, // increment usage count
+                $setOnInsert: { joinedAt: new Date() } // only set on first insert
+            },
+            { upsert: true, returnDocument: 'after' }
+        );
+
+        const url = ctx.message.text.trim();
+        const platform = detectPlatform(url);
+
+        if (!platform) {
+            await ctx.reply('Please send a valid TikTok, Instagram, Facebook, or YouTube link.');
+            return;
+        }
+
+        const platformEmoji = { tiktok: '🎵', instagram: '📸', facebook: '📘', youtube: '▶️' }[platform];
+        await ctx.reply(`${platformEmoji} Fetching your ${platform} media, please wait...`);
+
+        const result = await withDownloadTimeout(downloadMedia(url));
 
         if (result.type === 'carousel') {
             const images = result.images;
@@ -428,7 +503,12 @@ bot.on('text', async (ctx) => {
 
     } catch (err) {
         console.error('Bot error:', err.message);
-        ctx.reply(`${err.message}`);
+        try {
+            // await ctx.reply(`${err.message}`);
+            await ctx.reply(`${'Failed to download media, try again later'}`);
+        } catch (replyErr) {
+            console.error('Bot reply error:', replyErr.message);
+        }
     }
 });
 
