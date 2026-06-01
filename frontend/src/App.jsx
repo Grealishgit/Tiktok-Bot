@@ -1,12 +1,20 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import logo from '../src/assets/tik5.png'
+import pro from '../src/assets/pro.svg'
 
 //Format date in this format January 1, 2024, 10:00 AM
 const formatDate = (timestamp) => {
   const date = new Date(timestamp * 1000);
   return date.toLocaleString('default',
-    { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true });
+    {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: true
+    });
 };
 
 // format views, likes, comments, shares with commas
@@ -127,7 +135,7 @@ const App = () => {
       {/* Header */}
       <div className="flex items-center justify-center py-8">
         <div className="flex items-center space-x-2">
-          <img src={logo} alt="Logo" className='md:w-15 md:h-15 w-12 h-12 border-4 border-pink-500 rounded-full' />
+          <img src={pro} alt="Logo" className='md:w-15 md:h-15 w-12 h-12 border-4 border-pink-500 rounded-full' />
           <h1 className="text-2xl text-center font-bold bg-gradient-to-r from-pink-500 to-red-500 bg-clip-text text-transparent">
             Social Scrapper Downloader & Information Extractor
           </h1>
@@ -150,7 +158,7 @@ const App = () => {
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-3 bg-gradient-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              className="px-6 py-2 bg-gradient-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
             >
               {loading ? 'Downloading...' : 'Download'}
             </button>
@@ -300,7 +308,7 @@ const App = () => {
                     <div className="p-4">
                       <button
                         onClick={() => downloadFile(getProxyUrl(result.video), `tiktok-video-${Date.now()}.mp4`)}
-                        className="w-full py-3 bg-gradient-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold transition-all duration-200"
+                        className="w-full py-2 bg-gradient-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold transition-all duration-200"
                       >
                         Download Video
                       </button>
@@ -338,7 +346,7 @@ const App = () => {
                             setTimeout(() => downloadFile(getProxyUrl(imageUrl), `tiktok-image-${index + 1}-${Date.now()}.jpg`), index * 500);
                           });
                         }}
-                        className="px-6 py-3 bg-gradient-to-r cursor-pointer from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-semibold transition-all duration-200"
+                        className="px-6 py-2 bg-gradient-to-r cursor-pointer from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-semibold transition-all duration-200"
                       >
                         Download All Images
                       </button>
