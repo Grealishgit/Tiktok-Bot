@@ -31,18 +31,17 @@ const YTDLP_TIMEOUT_OPTIONS = {
 };
 
 // CORS configuration
+const allowedOrigins = [
+    // frontend
+    'https://social-scrapper.hantar.qzz.io',
+    'https://tiktok-bot-downloader.vercel.app',
+    'https://tiktok-bot-kappa.vercel.app',
+    // development
+    'http://localhost:5173'
+];
+
 app.use(cors({
-    origin: [
-
-        // frontend
-        'https://social-scrapper.hantar.qzz.io',
-        'https://tiktok-bot-downloader.vercel.app',
-
-        'https://tiktok-bot-kappa.vercel.app',
-
-        // development
-        'http://localhost:5173'
-    ],
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
