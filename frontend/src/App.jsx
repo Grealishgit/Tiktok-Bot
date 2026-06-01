@@ -70,6 +70,7 @@ const App = () => {
         id: apiData.id || '',
         region: apiData.region || '',
         type: apiData.type || (apiData.images ? 'carousel' : 'video'),
+        platform: apiData.platform || 'unknown',
         images: Array.isArray(apiData.images) ? apiData.images : [],
         original: apiData.original || '',
         origin_cover: apiData.origin_cover || '',
@@ -94,6 +95,15 @@ const App = () => {
     }
   };
 
+  const getProxyUrl = (mediaUrl) => {
+    if (!mediaUrl) return '';
+    const API_URL = import.meta.env.VITE_API_URL;
+    // Check if URL is from social media platforms that need CORS bypass
+    if (mediaUrl.includes('fbcdn.net') || mediaUrl.includes('instagram') || mediaUrl.includes('facebook')) {
+      return `${API_URL}/api/video?url=${encodeURIComponent(mediaUrl)}`;
+    }
+    return mediaUrl;
+  };
 
   const downloadFile = async (fileUrl, filename) => {
     try {
@@ -118,11 +128,8 @@ const App = () => {
       <div className="flex items-center justify-center py-8">
         <div className="flex items-center space-x-2">
           <img src={logo} alt="Logo" className='md:w-15 md:h-15 w-12 h-12 border-4 border-pink-500 rounded-full' />
-          {/* <div className="w-8 h-8 bg-gradient-to-r from-pink-500 to-red-500 rounded-full flex items-center justify-center">
-            <span className="text-white font-bold text-sm">T</span>
-          </div> */}
           <h1 className="text-2xl text-center font-bold bg-gradient-to-r from-pink-500 to-red-500 bg-clip-text text-transparent">
-            TikTok Downloader & Information Extractor
+            Social Scrapper Downloader & Information Extractor
           </h1>
         </div>
       </div>
@@ -166,12 +173,12 @@ const App = () => {
 
         {/* Results */}
         {result && !loading && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div className='w-full justify-between flex flex-col md:flex-row gap-4'>
 
-              <div className='md:flex-1  md:top-8 md:p-4 p-2 space-y-4 bg-gray-900'>
-                {/* Info Section */}
-
+              {result.platform === 'tiktok' && (
+                <div className='md:flex-1 md:top-8 md:p-4 p-2 space-y-4 bg-gray-900'>
+                  {/* Info Section */}
                 <div className="bg-gray-900 rounded-lg md:p-6 p-2">
                   <div className='mb-4'
                     style={{
@@ -181,14 +188,11 @@ const App = () => {
                       borderRadius: '5px',
                       width: '100%',
                       height: '200px',
-                      // padding: '10px',
                     }}>
-                    <div className='justify-between p-2 flex'>
-
+                      <div className='justify-between p-2 flex'>
                       <div className='border justify-center border-gray-700 px-6 h-9 rounded-lg bg-black/50'>
                         <h3 className="text-lg font-semibold text-pink-500">{result.nickname || 'N/A'}</h3>
-                      </div>
-
+                        </div>
                       <img
                         src={result.avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'}
                         alt={result.nickname || 'Unknown'}
@@ -198,7 +202,7 @@ const App = () => {
                     </div>
                   </div>
 
-                  <div className='border border-gray-700 p-4  items-center justify-center rounded-lg bg-black/50'>
+                    <div className='border border-gray-700 p-4 items-center justify-center rounded-lg bg-black/50'>
                     <div className='flex flex-col gap-2'>
                       <div>
                         <span className="text-gray-400">ID:</span>
@@ -214,21 +218,15 @@ const App = () => {
                       <div>
                         <span className="text-gray-400">Country:</span>
                         <span className="ml-2">{result.region || 'N/A'}</span>
-                      </div>
-
+                        </div>
                       <div>
                         <span className="text-gray-400">User:</span>
                         <span className="ml-2 capitalize">{result.nickname || 'N/A'}</span>
-                      </div>
-
+                        </div>
                       <div>
                         <span className="text-gray-400">Type:</span>
                         <span className="ml-2 capitalize">{result.type || 'N/A'}</span>
-                      </div>
-                      {/* <div>
-                      <span className="text-gray-400">Source:</span>
-                      <span className="ml-2">TikTok</span>
-                    </div> */}
+                        </div>
 
                       {result.type === 'carousel' && (
                         <div>
@@ -238,34 +236,24 @@ const App = () => {
                       )}
 
                       {result.type === 'video' && (
-                        <>
-                          <p className="text-gray-400">Duration:
+                          <div>
+                            <span className="text-gray-400">Duration:</span>
                             <span className="text-white font-semibold"> {formatDuration(result.duration || 'N/A')}</span>
-                          </p>
-                        </>
+                          </div>
                       )}
+
                       <div>
                         <span className="text-gray-400">Original Music:</span>
                         <span className="ml-2">{result.original ? "Yes" : "No"}</span>
-                      </div>
-
+                        </div>
                       <div>
                         <span className="text-gray-400">Likes:</span>
                         <span className="ml-2">{formatCount(result.likes) || 0}</span>
-                      </div>
-
+                        </div>
                       <div>
                         <span className="text-gray-400">Views:</span>
                         <span className="ml-2">{formatCount(result.views) || 0}</span>
-                      </div>
-
-                      {/* {result.type === 'video' && (
-                      <>
-                        <span className="text-gray-400">Views:</span>
-                        <span className="ml-2">{result.play_count || 0}</span>
-                      </>
-                    )} */}
-
+                        </div>
                       <div>
                         <span className="text-gray-400">Comments:</span>
                         <span className="ml-2">{result.comment_count || 0}</span>
@@ -273,97 +261,92 @@ const App = () => {
                       <div>
                         <span className="text-gray-400">Downloads:</span>
                         <span className="ml-2">{result.download_count || 0}</span>
-                      </div>
-
+                        </div>
                       <div>
                         <span className="text-gray-400">Shares:</span>
                         <span className="ml-2">{result.share_count || 0}</span>
                       </div>
                     </div>
-                  </div>
-
-                </div>
-                {/* Title */}
-                <div className="border border-gray-700 bg-black/50 rounded-lg p-4 text-center">
-                  <h2 className="text-xl text-start font-semibold mb-2">{result.title}</h2>
-
-                  <div className='flex md:flex-row flex-col justify-between mt-7 w-full'>
-                    <p className="text-gray-400">By: <span className="font-semibold text-pink-500">
-                      {result.nickname || 'No description available'}</span></p>
-                    <p className="text-gray-400">On: <span className="font-medium text-pink-500">
-                      {formatDate(result.postedOn || 'N/A')}</span></p>
-                  </div>
-
+                    </div>
                 </div>
 
-
-              </div>
-
+                  {/* Title - Only show for TikTok */}
+                  {result.platform === 'tiktok' && (
+                    <div className="border border-gray-700 bg-black/50 rounded-lg p-4 text-center">
+                      <h2 className="text-xl text-start font-semibold mb-2">{result.title}</h2>
+                      <div className='flex md:flex-row flex-col justify-between mt-7 w-full'>
+                        <p className="text-gray-400">By: <span className="font-semibold text-pink-500">
+                          {result.nickname || 'No description available'}</span></p>
+                        <p className="text-gray-400">On: <span className="font-medium text-pink-500">
+                          {formatDate(result.postedOn || 'N/A')}</span></p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="md:flex-1 space-y-6">
-                {/* Media Content */}
+                {/* Media Content - Video */}
                 {result.type === 'video' && (
                   <div className="bg-gray-900 rounded-lg overflow-hidden">
                     <video
                       controls
                       className="w-full max-h-96 object-contain"
-                      src={result.video}
+                      src={getProxyUrl(result.video)}
                       poster=""
                     >
                       Your browser does not support the video tag.
                     </video>
                     <div className="p-4">
                       <button
-                        onClick={() => downloadFile(result.video, `tiktok-video-${Date.now()}.mp4`)}
+                        onClick={() => downloadFile(getProxyUrl(result.video), `tiktok-video-${Date.now()}.mp4`)}
                         className="w-full py-3 bg-gradient-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold transition-all duration-200"
                       >
-                        📥 Download Video
+                        Download Video
                       </button>
                     </div>
                   </div>
                 )}
 
-                {result.type === 'carousel' && (
-                  <div className="space-y-4">
+                {/* Media Content - Images/Carousel */}
+                {result.type === 'carousel' && result.images && (
+                  <div className="bg-gray-900 rounded-lg p-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {result.images.map((imageUrl, index) => (
-                        <div key={index} className="bg-gray-900 rounded-lg overflow-hidden">
+                        <div key={index} className="bg-gray-800 rounded-lg overflow-hidden">
                           <img
-                            src={imageUrl}
-                            // src={/api/image ? url = ${encodeURIComponent(imageUrl)}}
-                            alt={`Slide ${index + 1}`}
-                            className="w-full h-100 object-cover"
+                            src={getProxyUrl(imageUrl)}
+                            alt={`Content ${index + 1}`}
+                            className="w-full h-64 object-cover"
                             loading="lazy"
                           />
                           <div className="p-3">
                             <button
-                              onClick={() => downloadFile(imageUrl, `tiktok-image-${index + 1}-${Date.now()}.jpg`)}
-                              className="w-full py-2 bg-gradient-to-r cursor-pointer  from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold text-sm transition-all duration-200"
+                              onClick={() => downloadFile(getProxyUrl(imageUrl), `tiktok-image-${index + 1}-${Date.now()}.jpg`)}
+                              className="w-full py-2 bg-gradient-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold text-sm transition-all duration-200"
                             >
-                              📥 Download Image {index + 1}
+                              Download Image {index + 1}
                             </button>
                           </div>
                         </div>
                       ))}
                     </div>
-                    <div className="text-center">
+                    <div className="text-center mt-4">
                       <button
                         onClick={() => {
                           result.images.forEach((imageUrl, index) => {
-                            setTimeout(() => downloadFile(imageUrl, `tiktok-image-${index + 1}-${Date.now()}.jpg`), index * 500);
+                            setTimeout(() => downloadFile(getProxyUrl(imageUrl), `tiktok-image-${index + 1}-${Date.now()}.jpg`), index * 500);
                           });
                         }}
                         className="px-6 py-3 bg-gradient-to-r cursor-pointer from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-semibold transition-all duration-200"
                       >
-                        📥 Download All Images
+                        Download All Images
                       </button>
                     </div>
                   </div>
                 )}
               </div>
             </div>
-
-
           </div>
         )}
       </div>
@@ -371,10 +354,11 @@ const App = () => {
       {/* Footer */}
       <footer className="text-center py-8 text-gray-500 text-sm">
         <p className='mb-2'>Download with Telegram
-          <a className='underline font-semibold text-pink-500' href="https://t.me/TikscrapperBot">Tiktok Scrapper</a></p>
+          <a className='underline font-semibold text-pink-500' href="https://t.me/TikscrapperBot"> Social Scrapper</a>
+        </p>
         <p>Built by <span className="font-semibold text-pink-500">
           <a className='underline' href="https://github.com/Grealishgit">Hunter</a>
-        </span>  with ❤️ for downloading TikTok content</p>
+        </span> with ❤️ for downloading TikTok content</p>
       </footer>
     </div>
   );

@@ -591,6 +591,29 @@ app.get('/api/image', async (req, res) => {
     }
 });
 
+// Video proxy (bypass CORS)
+app.get('/api/video', async (req, res) => {
+    try {
+        const videoUrl = req.query.url;
+        if (!videoUrl) return res.status(400).json({ error: 'Video URL required' });
+
+        const response = await axios.get(videoUrl, {
+            responseType: 'stream',
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            timeout: 30000
+        });
+
+        res.setHeader('Content-Type', response.headers['content-type'] || 'video/mp4');
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        response.data.pipe(res);
+
+    } catch (error) {
+        console.error('Video proxy error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch video' });
+    }
+});
+
 
 app.get('/api/stats', async (req, res) => {
     const now = new Date();
