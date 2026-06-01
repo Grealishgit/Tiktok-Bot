@@ -33,10 +33,14 @@ const YTDLP_TIMEOUT_OPTIONS = {
 // CORS configuration
 app.use(cors({
     origin: [
+
+        // frontend
+        'https://social-scrapper.hantar.qzz.io',
         'https://tiktok-bot-downloader.vercel.app',
+
         'https://tiktok-bot-kappa.vercel.app',
-        'https://tiktok-bot-zgte.onrender.com',
-        'https://www.hunterdev.live',
+
+        // development
         'http://localhost:5173'
     ],
     credentials: true,
