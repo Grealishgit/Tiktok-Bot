@@ -2,7 +2,7 @@ import { Telegraf } from "telegraf"; import express from "express";
 
 import axios from "axios";
 
-import dotenv from "dotenv"; const PORT = 4000
+import dotenv from "dotenv"; const PORT = 4005
 
 const app = express();    
 
@@ -36,7 +36,7 @@ bot.on("text", async (ctx) => {
         ctx.reply("Downloading...");
 
         // Call local API
-        const apiResponse = await axios.post('http://localhost:4000/api/download', { url });
+        const apiResponse = await axios.post('http://localhost:4005/api/download', { url });
 
         const result = apiResponse.data;
 
