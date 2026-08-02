@@ -1,8 +1,10 @@
-import { Telegraf } from "telegraf"; import express from "express";
+import { Telegraf } from "telegraf";
+import express from "express";
 
 import axios from "axios";
 
-import dotenv from "dotenv"; const PORT = 4005
+import dotenv from "dotenv";
+const PORT = 4005
 
 const app = express();    
 
@@ -58,7 +60,7 @@ bot.on("text", async (ctx) => {
 
     } catch (err) {
         console.error(err);
-        ctx.reply("❌ Error fetching the TikTok. Try again later or get the fuck out.");
+        ctx.reply("Error fetching the TikTok. Try again later or get the fuck out.");
     }
 });
 
