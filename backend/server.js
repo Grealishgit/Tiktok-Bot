@@ -2,7 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import { Telegraf } from "telegraf";
+import { Markup, Telegraf } from "telegraf";
 import job from './lib/cron.js';
 import youtubeDl from 'youtube-dl-exec';
 import fs from 'fs';
@@ -395,6 +395,15 @@ async function downloadMedia(url) {
 // ─── Telegram Bot ─────────────────────────────────────────────────────────────
 const bot = new Telegraf(process.env.TOKEN, { handlerTimeout: BOT_HANDLER_TIMEOUT_MS });
 
+function getAdminContactMarkup() {
+    const adminUsername = process.env.ADMIN_USERNAME?.replace(/^@/, '');
+    if (!adminUsername) return undefined;
+
+    return Markup.inlineKeyboard([
+        [Markup.button.url('Need a bot? Contact Admin', `https://t.me/${adminUsername}`)]
+    ]);
+}
+
 bot.catch(async (err, ctx) => {
     console.error('Unhandled bot middleware error:', err.message);
 
@@ -484,7 +493,7 @@ bot.on('text', async (ctx, next) => {
                     type: 'photo',
                     media: imageUrl,
                     caption: (i === 0 && index === 0)
-                        ? `📸 ${result.title}\n\nMade by HunterDev`
+                        ? `📸 ${result.title}\n\nMade by Grealishgit`
                         : undefined
                 }));
 
@@ -506,18 +515,24 @@ bot.on('text', async (ctx, next) => {
                 }
             }
 
+            await ctx.reply('Want your own downloader bot?', getAdminContactMarkup());
+
         } else if (result.type === 'video') {
             try {
                 await ctx.replyWithVideo(
                     { url: result.video },
-                    { caption: `🎬 ${result.title}\n\nMade by HunterDev` }
+                    {
+                        caption: `🎬 ${result.title}\n\nMade by Grealishgit`,
+                        ...getAdminContactMarkup()
+                    }
                 );
             } catch (videoErr) {
                 // Telegram has a 50MB bot upload limit — fall back to link
                 console.error('Video send failed (likely too large):', videoErr.message);
                 await ctx.reply(
                     `⚠️ The video is too large for Telegram to send directly.\n\n` +
-                    `🔗 Direct link (tap & hold to save):\n${result.video}`
+                        `🔗 Direct link (tap & hold to save):\n${result.video}`,
+                        getAdminContactMarkup()
                 );
             }
         } else if (result.type === 'playlist') {
@@ -530,7 +545,8 @@ bot.on('text', async (ctx, next) => {
 
             await ctx.reply(
                 `▶️ Playlist: ${result.title} (${result.count} videos)\n\n` +
-                lines.join('\n') + truncated
+                lines.join('\n') + truncated,
+                getAdminContactMarkup()
             );
         }
 
@@ -585,7 +601,11 @@ app.post('/api/download', async (req, res) => {
         if (!platform) return res.status(400).json({ error: 'Unsupported platform' });
 
         const result = await downloadMedia(url);
-        res.json({ platform, ...result });
+        res.json({
+            platform,
+            adminUsername: process.env.ADMIN_USERNAME || '',
+            ...result
+        });
 
     } catch (error) {
         console.error('Download error:', error.message);

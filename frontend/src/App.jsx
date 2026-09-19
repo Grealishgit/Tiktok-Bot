@@ -79,6 +79,7 @@ const App = () => {
         region: apiData.region || '',
         type: apiData.type || (apiData.images ? 'carousel' : 'video'),
         platform: apiData.platform || 'unknown',
+        adminUsername: apiData.adminUsername || '',
         images: Array.isArray(apiData.images) ? apiData.images : [],
         original: apiData.original || '',
         origin_cover: apiData.origin_cover || '',
@@ -352,6 +353,17 @@ const App = () => {
                       </button>
                     </div>
                   </div>
+                )}
+
+                {result.adminUsername && (
+                  <a
+                    href={`https://t.me/${result.adminUsername.replace(/^@/, '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block w-full py-3 text-center bg-linear-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 rounded-lg font-semibold transition-all duration-200"
+                  >
+                    Need a bot? Contact Admin
+                  </a>
                 )}
               </div>
             </div>
