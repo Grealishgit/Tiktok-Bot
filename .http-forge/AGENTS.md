@@ -1,6 +1,6 @@
 # HTTP Forge — AI Agent Guide
 
-This folder is an **HTTP Forge workspace** (`.http-forge/`).
+This folder is already the **HTTP Forge workspace root**. Do not create a second nested `.http-forge/` directory inside it.
 
 > **GitHub Copilot tip:** To keep this guide in every Copilot conversation, add one line to
 > `.github/copilot-instructions.md`: `See .http-forge/AGENTS.md for the HTTP Forge AI guide.`
@@ -31,6 +31,11 @@ Task
  │
  └─ Diagnose failures, suggest assertions, explain errors?
       └─ ✅ MCP  explain_failure / suggest_assertions / analyze-test-failure prompt
+
+ └─ Design a NEW API from a plain-English intent (endpoints + DTOs + auth)?
+      ├─ Is @http-forge/cli installed?  (check: http-forge --version)
+      │    └─ YES → ✅ CLI  http-forge architect "I need a shopping cart"
+      └─ NO  → ✅ MCP  design_api_from_intent  (then review; apply:true to approve)
 ```
 
 ---
@@ -50,31 +55,67 @@ Task
 
 ## Folder Structure
 
+> Important: this directory is the workspace root. Use the paths below as-is; do not create another nested `.http-forge/` directory.
+
+```
+assets/
+  collections/
+    {collection-slug}/
+      collection.json          ← collection metadata (id, name, variables, auth, order)
+      scripts/
+        pre-request.js         ← collection-level pre-request script
+        post-response.js       ← collection-level post-response script
+      {folder-slug}/
+        folder.json            ← folder metadata
+        scripts/
+          pre-request.js       ← folder-level pre-request script
+          post-response.js     ← folder-level post-response script
+        {request-slug}/
+          request.json         ← request (method, url, headers, auth, body, scripts…)
+          body.json            ← JSON body (when bodyContentType is application/json)
+          body.txt             ← raw text body
+          body.graphql         ← GraphQL query
+          doc.md               ← optional business docs for this request (fed to AI)
+          scripts/
+            pre-request.js     ← request-level pre-request script
+            post-response.js   ← assertions live here (pm.test() calls)
+  environments/
+    _global.json               ← global variables + defaultHeaders (all envs)
+    {env}.json                 ← per-environment variables
+    {env}.local.json           ← local overrides — gitignored, never commit
+  suites/
+    {name}.suite.json          ← test suite with control-flow nodes
+```
+
+---
+
+## Business Knowledge (`.http-forge/knowledge/`)
+
+HTTP Forge feeds business context into every AI feature (assertion suggestions,
+failure diagnosis, request generation, scenario generation, env-var suggestions,
+collection enhancement, and the `analyze-test-failure` / `suggest-assertions` /
+`review-collection` prompts). The AI uses it to write realistic tests and
+accurate diagnoses.
+
+Drop markdown files into `.http-forge/knowledge/` (any depth):
+
 ```
 .http-forge/
-  assets/
-    collections/
-      {collection-slug}/
-        collection.json          ← collection metadata (id, name, variables, auth, order)
-        scripts/
-          pre-request.js         ← collection-level pre-request script
-          post-response.js       ← collection-level post-response script
-        {folder-slug}/
-          folder.json            ← folder metadata
-          {request-slug}/
-            request.json         ← request (method, url, headers, auth, body, scripts…)
-            body.json            ← JSON body (when bodyContentType is application/json)
-            body.txt             ← raw text body
-            body.graphql         ← GraphQL query
-            pre-request.js       ← request-level pre-request script
-            post-response.js     ← assertions live here (pm.test() calls)
-    environments/
-      _global.json               ← global variables + defaultHeaders (all envs)
-      {env}.json                 ← per-environment variables
-      {env}.local.json           ← local overrides — gitignored, never commit
-    suites/
-      {name}.suite.json          ← test suite with control-flow nodes
+  knowledge/
+    api-overview.md          ← Confluence export: what the API does, auth model
+    jira/API-123.md          ← Jira ticket summaries / ACs relevant to tests
+    decisions/adr-007.md     ← Architecture decision records
+    field-glossary.md        ← Meanings of domain fields the tests assert on
 ```
+
+Every `*.md` file under `.http-forge/knowledge/` is loaded and included in AI
+prompts, along with the workspace `README.md` and `AGENTS.md`. Prefer short,
+dense notes — the knowledge is bounded to keep token cost predictable. There is
+no need to paste Confluence/Jira content into collection files themselves.
+
+Per-request business docs can also live next to a request as `doc.md`
+(alongside `request.json`) — HTTP Forge loads it and passes it to AI features
+automatically.
 
 ---
 
@@ -134,6 +175,11 @@ http-forge run request <request-name> --collection <name> --json
 
 # Run a test suite
 http-forge run suite <name> --json
+
+# Design a new API from an intent (persists a collection; add --apply to
+# persist the suite + write flow/docs/OpenAPI byproducts)
+http-forge architect "I need a shopping cart"
+http-forge architect "a todo list" --apply --flow-out ./todo.flow.js --docs-out ./todo.md
 
 # Pipe output to filter results (saves tokens — AI only sees what it needs)
 http-forge run collection auth --json | jq '.failedRequests'
