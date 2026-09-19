@@ -551,6 +551,11 @@ bot.command('status', async (ctx) => {
     await ctx.reply(`Hey ${name}! The bot is running smoothly.`);
 });
 
+bot.command('up', async (ctx) => {
+    const name = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || 'there';
+    await ctx.reply(`Hey ${name}! The bot is up and running smoothly.`);
+});
+
 bot.command('uptime', async (ctx) => {
     const totalSeconds = Math.floor(process.uptime());
     const days = Math.floor(totalSeconds / 86400);
@@ -706,7 +711,7 @@ async function updateBotDescription() {
 
 app.listen(PORT, async () => {
     console.log(`Multi-Platform Downloader API running on port ${PORT}`);
-    console.log(`Frontend URL: ${frontendURL}`);
+    // console.log(`Frontend URL: ${frontendURL}`);
 
     try {
         job.start();
