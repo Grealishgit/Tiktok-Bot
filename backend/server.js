@@ -443,97 +443,96 @@ bot.on('text', async (ctx, next) => {
     }
 
     try {
+        const userId = ctx.from.id;
+        const username = ctx.from.username;
+        const firstName = ctx.from.first_name;
 
-            const userId = ctx.from.id;
-            const username = ctx.from.username;
-            const firstName = ctx.from.first_name;
+        // Save to DB (upsert = insert if not exists, update if exists)
+        await User.findOneAndUpdate(
+            { telegramId: userId },
+            {
+                telegramId: userId,
+                username,
+                firstName,
+                lastActive: new Date(),
+                $inc: { messageCount: 1 }, // increment usage count
+                $setOnInsert: { joinedAt: new Date() } // only set on first insert
+            },
+            { upsert: true, returnDocument: 'after' }
+        );
 
-            // Save to DB (upsert = insert if not exists, update if exists)
-            await User.findOneAndUpdate(
-                { telegramId: userId },
-                {
-                    telegramId: userId,
-                    username,
-                    firstName,
-                    lastActive: new Date(),
-                    $inc: { messageCount: 1 }, // increment usage count
-                    $setOnInsert: { joinedAt: new Date() } // only set on first insert
-                },
-                { upsert: true, returnDocument: 'after' }
-            );
+        const url = ctx.message.text.trim();
+        const platform = detectPlatform(url);
 
-            const url = ctx.message.text.trim();
-            const platform = detectPlatform(url);
+        if (!platform) {
+            await ctx.reply('Please send a valid TikTok, Instagram, Facebook, or YouTube link.');
+            return;
+        }
 
-            if (!platform) {
-                await ctx.reply('Please send a valid TikTok, Instagram, Facebook, or YouTube link.');
-                return;
-            }
+        const platformEmoji = { tiktok: '🎵', instagram: '📸', facebook: '📘', youtube: '▶️' }[platform];
+        await ctx.reply(`${platformEmoji} Fetching your ${platform} media, please wait...`);
 
-            const platformEmoji = { tiktok: '🎵', instagram: '📸', facebook: '📘', youtube: '▶️' }[platform];
-            await ctx.reply(`${platformEmoji} Fetching your ${platform} media, please wait...`);
+        const result = await withDownloadTimeout(downloadMedia(url));
 
-            const result = await withDownloadTimeout(downloadMedia(url));
+        if (result.type === 'carousel') {
+            const images = result.images;
+            const maxPerGroup = 10;
 
-            if (result.type === 'carousel') {
-                const images = result.images;
-                const maxPerGroup = 10;
+            for (let i = 0; i < images.length; i += maxPerGroup) {
+                const chunk = images.slice(i, i + maxPerGroup);
+                const media = chunk.map((imageUrl, index) => ({
+                    type: 'photo',
+                    media: imageUrl,
+                    caption: (i === 0 && index === 0)
+                        ? `📸 ${result.title}\n\nMade by HunterDev`
+                        : undefined
+                }));
 
-                for (let i = 0; i < images.length; i += maxPerGroup) {
-                    const chunk = images.slice(i, i + maxPerGroup);
-                    const media = chunk.map((imageUrl, index) => ({
-                        type: 'photo',
-                        media: imageUrl,
-                        caption: (i === 0 && index === 0)
-                            ? `📸 ${result.title}\n\nMade by HunterDev`
-                            : undefined
-                    }));
-
-                    try {
-                        await ctx.replyWithMediaGroup(media);
-                        if (i + maxPerGroup < images.length) {
-                            await new Promise(resolve => setTimeout(resolve, 1000));
-                        }
-                    } catch (groupErr) {
-                        console.error('Media group failed, sending individually:', groupErr.message);
-                        for (const imgUrl of chunk) {
-                            try {
-                                await ctx.replyWithPhoto(imgUrl);
-                                await new Promise(resolve => setTimeout(resolve, 500));
-                            } catch (photoErr) {
-                                console.error('Individual photo failed:', photoErr.message);
-                            }
+                try {
+                    await ctx.replyWithMediaGroup(media);
+                    if (i + maxPerGroup < images.length) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                } catch (groupErr) {
+                    console.error('Media group failed, sending individually:', groupErr.message);
+                    for (const imgUrl of chunk) {
+                        try {
+                            await ctx.replyWithPhoto(imgUrl);
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        } catch (photoErr) {
+                            console.error('Individual photo failed:', photoErr.message);
                         }
                     }
                 }
+            }
 
-            } else if (result.type === 'video') {
-                try {
-                    await ctx.replyWithVideo(
-                        { url: result.video },
-                        { caption: `🎬 ${result.title}\n\nMade by HunterDev` }
-                    );
-                } catch (videoErr) {
-                    // Telegram has a 50MB bot upload limit — fall back to link
-                    console.error('Video send failed (likely too large):', videoErr.message);
-                    await ctx.reply(
-                        `⚠️ The video is too large for Telegram to send directly.\n\n` +
-                        `🔗 Direct link (tap & hold to save):\n${result.video}`
-                    );
-                }
-            } else if (result.type === 'playlist') {
-                // Telegram can't bulk-send a playlist, so send a summary with links
-                const lines = result.entries.slice(0, 20).map((e, i) =>
-                    `${i + 1}. ${e.title} — ${e.url}`
+        } else if (result.type === 'video') {
+            try {
+                await ctx.replyWithVideo(
+                    { url: result.video },
+                    { caption: `🎬 ${result.title}\n\nMade by HunterDev` }
                 );
-                const truncated = result.entries.length > 20
-                    ? `\n\n...and ${result.entries.length - 20} more.` : '';
-
+            } catch (videoErr) {
+                // Telegram has a 50MB bot upload limit — fall back to link
+                console.error('Video send failed (likely too large):', videoErr.message);
                 await ctx.reply(
-                    `▶️ Playlist: ${result.title} (${result.count} videos)\n\n` +
-                    lines.join('\n') + truncated
+                    `⚠️ The video is too large for Telegram to send directly.\n\n` +
+                    `🔗 Direct link (tap & hold to save):\n${result.video}`
                 );
             }
+        } else if (result.type === 'playlist') {
+            // Telegram can't bulk-send a playlist, so send a summary with links
+            const lines = result.entries.slice(0, 20).map((e, i) =>
+                `${i + 1}. ${e.title} — ${e.url}`
+            );
+            const truncated = result.entries.length > 20
+                ? `\n\n...and ${result.entries.length - 20} more.` : '';
+
+            await ctx.reply(
+                `▶️ Playlist: ${result.title} (${result.count} videos)\n\n` +
+                lines.join('\n') + truncated
+            );
+        }
 
     } catch (err) {
         console.error('Bot error:', err.message);
@@ -548,12 +547,12 @@ bot.on('text', async (ctx, next) => {
 
 bot.command('status', async (ctx) => {
     const name = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || 'there';
-    await ctx.reply(`Hey ${name}! The bot is running smoothly.`);
+    await ctx.reply(`Hey ${name}!\nThe bot is running smoothly.`);
 });
 
 bot.command('up', async (ctx) => {
     const name = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || 'there';
-    await ctx.reply(`Hey ${name}! The bot is up and running smoothly.`);
+    await ctx.reply(`Hey ${name}!\nThe bot is up and running smoothly.`);
 });
 
 bot.command('uptime', async (ctx) => {
