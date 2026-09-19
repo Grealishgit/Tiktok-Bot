@@ -136,7 +136,7 @@ const App = () => {
       <div className="flex items-center justify-center py-8">
         <div className="flex items-center space-x-2">
           <img src={pro} alt="Logo" className='md:w-15 md:h-15 w-12 h-12 border-4 border-pink-500 rounded-full' />
-          <h1 className="text-2xl text-center font-bold bg-gradient-to-r from-pink-500 to-red-500 bg-clip-text text-transparent">
+          <h1 className="text-2xl text-center font-bold bg-linear-to-r from-pink-500 to-red-500 bg-clip-text text-transparent">
             Social Scrapper Downloader & Information Extractor
           </h1>
         </div>
@@ -158,7 +158,7 @@ const App = () => {
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-2 bg-gradient-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              className="px-6 py-2 bg-linear-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
             >
               {loading ? 'Downloading...' : 'Download'}
             </button>
@@ -308,7 +308,7 @@ const App = () => {
                     <div className="p-4">
                       <button
                         onClick={() => downloadFile(getProxyUrl(result.video), `tiktok-video-${Date.now()}.mp4`)}
-                        className="w-full py-2 bg-gradient-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold transition-all duration-200"
+                        className="w-full py-2 bg-linear-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold transition-all duration-200"
                       >
                         Download Video
                       </button>
@@ -331,7 +331,7 @@ const App = () => {
                           <div className="p-3">
                             <button
                               onClick={() => downloadFile(getProxyUrl(imageUrl), `tiktok-image-${index + 1}-${Date.now()}.jpg`)}
-                              className="w-full py-2 bg-gradient-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold text-sm transition-all duration-200"
+                              className="w-full py-2 bg-linear-to-r cursor-pointer from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 rounded-lg font-semibold text-sm transition-all duration-200"
                             >
                               Download Image {index + 1}
                             </button>
@@ -346,7 +346,7 @@ const App = () => {
                             setTimeout(() => downloadFile(getProxyUrl(imageUrl), `tiktok-image-${index + 1}-${Date.now()}.jpg`), index * 500);
                           });
                         }}
-                        className="px-6 py-2 bg-gradient-to-r cursor-pointer from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-semibold transition-all duration-200"
+                        className="px-6 py-2 bg-linear-to-r cursor-pointer from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-semibold transition-all duration-200"
                       >
                         Download All Images
                       </button>
