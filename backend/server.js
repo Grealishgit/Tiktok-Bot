@@ -728,7 +728,7 @@ async function updateBotDescription() {
 
 // ─── Start server ─────────────────────────────────────────────────────────────
 
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
     console.log(`Multi-Platform Downloader API running on port ${PORT}`);
     // console.log(`Frontend URL: ${frontendURL}`);
 

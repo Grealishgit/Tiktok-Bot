@@ -6,7 +6,7 @@ import axios from "axios";
 import dotenv from "dotenv";
 const PORT = process.env.PORT || 4005
 
-const app = express();    
+const app = express();
 
 dotenv.config();
 
