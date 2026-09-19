@@ -4,7 +4,7 @@ import express from "express";
 import axios from "axios";
 
 import dotenv from "dotenv";
-const PORT = 4005
+const PORT = process.env.PORT || 4005
 
 const app = express();    
 

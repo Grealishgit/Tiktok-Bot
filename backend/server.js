@@ -559,7 +559,7 @@ bot.command('uptime', async (ctx) => {
     const seconds = totalSeconds % 60;
     const uptime = `${days}d ${hours}h ${minutes}m ${seconds}s`;
 
-    await ctx.reply(`Bot uptime: ${uptime}`);
+    await ctx.reply(`Bot has been up: ${uptime}`);
 });
 
 bot.on('text', async (ctx) => {
@@ -569,8 +569,7 @@ bot.on('text', async (ctx) => {
     }
 });
 
-// ─── API Routes ───────────────────────────────────────────────────────────────
-
+// ─── API Routes ──────
 
 // General download endpoint — all platforms
 app.post('/api/download', async (req, res) => {
@@ -716,8 +715,24 @@ app.listen(PORT, async () => {
         console.error('Cron job failed to start:', error);
     }
 
-    bot.launch();
-    console.log('Telegram bot started');
+
+    bot.launch()
+        .then(() => console.log("Telegram bot started"))
+        .catch((err) => console.error("Failed to start Telegram bot:", err));
+
+    const shutdown = (signal) => {
+        console.log(`Received ${signal}, shutting down gracefully...`);
+        try {
+            bot.stop(signal);
+        } catch (e) { }
+        server.close(() => {
+            process.exit(0);
+        });
+        setTimeout(() => process.exit(0), 1500);
+    };
+
+    process.once("SIGINT", () => shutdown("SIGINT"));
+    process.once("SIGTERM", () => shutdown("SIGTERM"));
 
     // Update description once on startup, then every 6 hours
     await updateBotDescription();
