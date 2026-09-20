@@ -428,9 +428,9 @@ async function downloadMedia(url) {
 
 // ─── Telegram Bot ─────────────────────────────────────────────────────────────
 const bot = new Telegraf(process.env.TOKEN, { handlerTimeout: BOT_HANDLER_TIMEOUT_MS });
+const adminUsername = process.env.ADMIN_USERNAME?.replace(/^@/, '') || '';
 
 function getAdminContactMarkup() {
-    const adminUsername = process.env.ADMIN_USERNAME?.replace(/^@/, '');
     if (!adminUsername) return undefined;
 
     return Markup.inlineKeyboard([
