@@ -527,7 +527,7 @@ bot.on('text', async (ctx, next) => {
                     type: 'photo',
                     media: imageUrl,
                     caption: (i === 0 && index === 0)
-                        ? `📸 ${result.title}\n\nMade by Hanter | https://t.me/${adminUsername}`
+                        ? `📸 ${result.title}\n\nTiktok Downloader Bot Developed by Hanter | https://t.me/${adminUsername}`
                         : undefined
                 }));
 
@@ -556,7 +556,7 @@ bot.on('text', async (ctx, next) => {
                 await ctx.replyWithVideo(
                     { url: result.video },
                     {
-                        caption: `🎬 ${result.title}\n\nMade by Hanter | https://t.me/${adminUsername}`,
+                        caption: `🎬 ${result.title}\n\n Tiktok Downloader Bot Developed by Hanter | https://t.me/${adminUsername}`,
                         ...getAdminContactMarkup()
                     }
                 );
