@@ -98,11 +98,31 @@ function isAnyTimeoutError(err) {
     );
 }
 
+// The yt-dlp binary lives in node_modules and is fetched by a postinstall step.
+// When that fetch fails, spawning the missing binary rejects with an ENOENT error
+// whose message/stderr/stdout are ALL empty — so it used to surface as a blank
+// "yt-dlp error: " and get misreported as an age-restricted video.
+function isYtDlpMissingError(err) {
+    return err?.code === 'ENOENT' && !err?.message && !err?.stderr && !err?.stdout;
+}
+
+function createYtDlpMissingError() {
+    const error = new Error(
+        'yt-dlp binary is missing. Run `npm install` in backend/, or `node scripts/ensure-ytdlp.mjs`.'
+    );
+    error.name = 'YtDlpMissingError';
+    return error;
+}
+
 async function runYtDlp(url, flags) {
     try {
         return await youtubeDl(url, flags, YTDLP_TIMEOUT_OPTIONS);
     } catch (err) {
         if (isAnyTimeoutError(err)) throw createDownloadTimeoutError();
+        if (isYtDlpMissingError(err)) {
+            console.error('yt-dlp binary missing at:', err.path);
+            throw createYtDlpMissingError();
+        }
         throw err;
     }
 }
@@ -283,7 +303,17 @@ async function downloadYouTube(url) {
         noWarnings: true,
         noCheckCertificate: true,
         addHeader: ['referer:https://www.youtube.com', 'user-agent:Mozilla/5.0'],
-        format: 'best[ext=mp4]/best', // best single-file format, no merging needed
+        // Without a JS runtime YouTube extraction is deprecated and only video-only
+        // DASH streams are returned, leaving no combined format to pick.
+        jsRuntimes: 'node',
+        // The default (visionos/web) clients also return video-only DASH streams for
+        // most modern uploads, so a combined video+audio format never appears. The
+        // android client still serves the progressive format 18 (360p mp4).
+        extractorArgs: 'youtube:player_client=android',
+        // NOTE: deliberately no `format` flag. Format selection happens below from
+        // info.formats, and passing a selector here makes yt-dlp hard-fail with
+        // "Requested format is not available" on videos lacking a combined stream,
+        // even though all we need is the JSON.
     };
 
     const configuredCookieFlags = getYouTubeCookieFlags();
@@ -293,9 +323,10 @@ async function downloadYouTube(url) {
         info = await runYtDlp(url, baseFlags);
     } catch (err) {
         if (isDownloadTimeoutError(err)) throw err;
+        if (err?.name === 'YtDlpMissingError') throw err;
 
         if (!isYouTubeBotCheckError(err)) {
-            console.error('YouTube yt-dlp error:', err.message);
+            console.error('YouTube yt-dlp error:', err.message || err.stderr || err);
             throw new Error('Could not fetch YouTube video. It may be age-restricted or unavailable.');
         }
 
@@ -319,7 +350,8 @@ async function downloadYouTube(url) {
                 break;
             } catch (retryErr) {
                 if (isDownloadTimeoutError(retryErr)) throw retryErr;
-                console.error(`YouTube yt-dlp ${attempt.label} retry error:`, retryErr.message);
+                if (retryErr?.name === 'YtDlpMissingError') throw retryErr;
+                console.error(`YouTube yt-dlp ${attempt.label} retry error:`, retryErr.message || retryErr.stderr || retryErr);
             }
         }
 
@@ -347,27 +379,29 @@ async function downloadYouTube(url) {
         };
     }
 
-    // Pick best SINGLE-FILE format (video+audio combined, no ffmpeg merge needed)
-    let videoUrl = null;
+    // Pick best SINGLE-FILE format (video+audio combined, no ffmpeg merge needed).
+    // A video-only stream would be delivered as silent video, so only combined
+    // formats are acceptable here.
+    const combined = (info.formats || [])
+        .filter(f =>
+            f.vcodec !== 'none' &&
+            f.acodec !== 'none' &&
+            f.url
+        )
+        .sort((a, b) => (b.height || 0) - (a.height || 0)); // highest quality first
 
-    if (info.formats) {
-        // Priority: combined mp4 → any combined format → fallback to info.url
-        const combined = info.formats
-            .filter(f =>
-                f.vcodec !== 'none' &&
-                f.acodec !== 'none' &&
-                f.url
-            )
-            .sort((a, b) => (b.height || 0) - (a.height || 0)); // highest quality first
+    let videoUrl = combined[0]?.url;
 
-        if (combined.length > 0) {
-            videoUrl = combined[0].url;
-        }
+    // info.url is the extractor's own pick — accept it only if it is combined too.
+    if (!videoUrl && info.url && (info.formats || []).some(
+        f => f.url === info.url && f.vcodec !== 'none' && f.acodec !== 'none'
+    )) {
+        videoUrl = info.url;
     }
 
-    // Final fallback
-    if (!videoUrl) videoUrl = info.url;
-    if (!videoUrl) throw new Error('No downloadable URL found');
+    if (!videoUrl) {
+        throw new Error('No single-file video format available for this video. Higher quality requires ffmpeg.');
+    }
 
     return {
         type: 'video',
@@ -493,7 +527,7 @@ bot.on('text', async (ctx, next) => {
                     type: 'photo',
                     media: imageUrl,
                     caption: (i === 0 && index === 0)
-                        ? `📸 ${result.title}\n\nMade by Grealishgit`
+                        ? `📸 ${result.title}\n\nMade by Hanter | t.me/hun_ter42`
                         : undefined
                 }));
 
@@ -522,7 +556,7 @@ bot.on('text', async (ctx, next) => {
                 await ctx.replyWithVideo(
                     { url: result.video },
                     {
-                        caption: `🎬 ${result.title}\n\nMade by Grealishgit`,
+                        caption: `🎬 ${result.title}\n\nMade by Hanter | t.em/hun_ter42`,
                         ...getAdminContactMarkup()
                     }
                 );
@@ -687,7 +721,6 @@ app.get('/api/video', async (req, res) => {
     }
 });
 
-
 app.get('/api/stats', async (req, res) => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -702,7 +735,7 @@ app.get('/api/stats', async (req, res) => {
     res.json({ total, monthly, active });
 });
 
-// ─── Bot stats helper ─────────────────────────────────────────────────────────
+// ─── Bot stats helper ────
 async function getBotStats() {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -717,7 +750,7 @@ async function updateBotDescription() {
     try {
         const { total } = await getBotStats();
         await bot.telegram.setMyDescription(
-            `⚡ Fast TikTok, Instagram, Facebook & YouTube downloader\n\n👥 ${total.toLocaleString()} total users`
+            `⚡ Fast TikTok, Instagram, Facebook & YouTube downloader\n\n ${total.toLocaleString()} total users`
         );
         console.log('Bot description updated');
     } catch (err) {
@@ -725,8 +758,7 @@ async function updateBotDescription() {
     }
 }
 
-
-// ─── Start server ─────────────────────────────────────────────────────────────
+// ─── Start server ─────
 
 const server = app.listen(PORT, async () => {
     console.log(`Multi-Platform Downloader API running on port ${PORT}`);
@@ -738,7 +770,6 @@ const server = app.listen(PORT, async () => {
     } catch (error) {
         console.error('Cron job failed to start:', error);
     }
-
 
     bot.launch()
         .then(() => console.log("Telegram bot started"))

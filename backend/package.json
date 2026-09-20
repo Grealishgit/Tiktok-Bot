@@ -4,9 +4,11 @@
   "description": "",
   "main": "server.js",
   "scripts": {
+    "postinstall": "node scripts/ensure-ytdlp.mjs",
     "start": "node server.js",
     "server": "nodemon server.js",
     "bot": "nodemon server.js",
+    "ensure-ytdlp": "node scripts/ensure-ytdlp.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
