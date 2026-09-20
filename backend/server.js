@@ -527,7 +527,7 @@ bot.on('text', async (ctx, next) => {
                     type: 'photo',
                     media: imageUrl,
                     caption: (i === 0 && index === 0)
-                        ? `📸 ${result.title}\n\nMade by Hanter | t.me/hun_ter42`
+                        ? `📸 ${result.title}\n\nMade by Hanter | https://t.me/${adminUsername}`
                         : undefined
                 }));
 
@@ -556,7 +556,7 @@ bot.on('text', async (ctx, next) => {
                 await ctx.replyWithVideo(
                     { url: result.video },
                     {
-                        caption: `🎬 ${result.title}\n\nMade by Hanter | t.em/hun_ter42`,
+                        caption: `🎬 ${result.title}\n\nMade by Hanter | https://t.me/${adminUsername}`,
                         ...getAdminContactMarkup()
                     }
                 );
