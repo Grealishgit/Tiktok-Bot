@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import { Markup, Telegraf } from "telegraf";
 import job from './lib/cron.js';
-import youtubeDl from 'youtube-dl-exec';
+import { create as createYoutubeDl } from 'youtube-dl-exec';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -16,6 +16,7 @@ dotenv.config();
 
 connectDB();
 
+const youtubeDl = createYoutubeDl('/usr/local/bin/yt-dlp');
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PACK = 'savedtiktoka_by_emoji_saverbot';
@@ -214,7 +215,7 @@ function createYtDlpMissingError() {
 
 async function runYtDlp(url, flags) {
     try {
-        return await youtubeDl(url, flags, YTDLP_TIMEOUT_OPTIONS);
+        return await youtubeDl(url, { 'js-runtimes': `node:${process.execPath}`, ...flags });
     } catch (err) {
         if (isAnyTimeoutError(err)) throw createDownloadTimeoutError();
         if (isYtDlpMissingError(err)) {
