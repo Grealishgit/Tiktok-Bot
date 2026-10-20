@@ -215,7 +215,7 @@ function createYtDlpMissingError() {
 
 async function runYtDlp(url, flags) {
     try {
-        return await youtubeDl(url, { 'js-runtimes': `node:${process.execPath}`, ...flags });
+        return await youtubeDl(url, { 'js-runtimes': `node:${process.execPath}`, ...flags }, YTDLP_TIMEOUT_OPTIONS);
     } catch (err) {
         if (isAnyTimeoutError(err)) throw createDownloadTimeoutError();
         if (isYtDlpMissingError(err)) {
@@ -398,17 +398,17 @@ function isYouTubeBotCheckError(err) {
 
 async function downloadYouTube(url) {
     const baseFlags = {
-        dumpSingleJson: true,
-        noWarnings: true,
-        noCheckCertificate: true,
-        addHeader: ['referer:https://www.youtube.com', 'user-agent:Mozilla/5.0'],
+        //   dumpSingleJson: true,
+        //   noWarnings: true,
+        //   noCheckCertificate: true,
+        //   addHeader: ['referer:https://www.youtube.com', 'user-agent:Mozilla/5.0'],
         // Without a JS runtime YouTube extraction is deprecated and only video-only
         // DASH streams are returned, leaving no combined format to pick.
-        jsRuntimes: 'node',
+        //     jsRuntimes: 'node',
         // The default (visionos/web) clients also return video-only DASH streams for
         // most modern uploads, so a combined video+audio format never appears. The
         // android client still serves the progressive format 18 (360p mp4).
-        extractorArgs: 'youtube:player_client=android',
+        //    extractorArgs: 'youtube:player_client=android',
         // NOTE: deliberately no `format` flag. Format selection happens below from
         // info.formats, and passing a selector here makes yt-dlp hard-fail with
         // "Requested format is not available" on videos lacking a combined stream,
