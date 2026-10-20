@@ -18,6 +18,7 @@ connectDB();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const PACK = 'savedtiktoka_by_emoji_saverbot';
 
 const app = express();
 const PORT = process.env.PORT;
@@ -52,6 +53,103 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get('/', (req, res) => {
     res.send('Multi-Platform Downloader API is running!');
+});
+
+const E = {
+    // platform logos: put the real IDs here
+    instagram: '5305474827602140530',
+    tiktok: '5305761237496277576',
+    youtube: '5305416141169008327',
+    pinterest: '5305490186405190373',
+    twitter: '5305777524012262308',
+    facebook: '5305421033136756692',
+    vk: '5305490186405190373',
+    reddit: '5305311717629142471',
+    twitch: '5305294597889499194',
+    vimeo: '5359708582239578213',
+    ok: '5305371185746319967',
+    tumblr: '5305311717629142471',
+    likee: '5305290882742788410',
+    soundcloud: '5305558940241665512',
+    applemusic: '5305777524012262308',
+    spotify: '5305551797711053969',
+    threads: '5305294597889499194',
+
+    // UI icons: candidates from your list, verify each visually
+    arrow: '',                    // the green arrow before "My options"
+    star: '5305348452484427680', // ⭐️ (#89)
+    hide: '5305732070373367639', // ✖️ (#29)
+    audio: '5305534793935527938', // 🎵 (#103) or 5289766921019892014 (#137)
+    support: '',
+    language: '',
+    addbot: '5305761237496277576', // 💬 (#10), try others if wrong
+};
+
+// ---------- 2. HELPERS ----------
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// custom emoji in message text (falls back to a plain emoji if no id set)
+const ce = (id, fallback) => (id ? `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>` : fallback);
+
+// inline button with optional custom icon
+const btn = (text, data, iconId,style) => {
+    const b = { text, callback_data: data };
+    if (iconId) b.icon_custom_emoji_id = iconId;
+     if (style) b.style = style;   // 'primary' | 'success' | 'danger'
+    return b;
+};
+
+
+// ---------- 3. TEXT ----------
+const optionsText = (subscriptionActive = false) =>
+    `${ce(E.arrow, '⬇️')} <b>My options:</b>\n\n` +
+    `${ce(E.instagram, '📸')} <b>Instagram:</b> reels, posts &amp; stories\n` +
+    `${ce(E.tiktok, '🎵')} <b>Tiktok:</b> videos, photos &amp; audio\n` +
+    `${ce(E.youtube, '▶️')} <b>YouTube:</b> videos &amp; music\n` +
+    `${ce(E.pinterest, '📌')} <b>Pinterest:</b> videos &amp; stories\n` +
+    `${ce(E.twitter, '🐦')} <b>Twitter (X):</b> videos &amp; voice\n` +
+    `${ce(E.facebook, '📘')} <b>Facebook:</b> video\n` +
+    `${ce(E.vk, '🔵')} <b>Vk:</b> videos &amp; clips\n` +
+    `${ce(E.reddit, '🟠')} <b>Reddit:</b> videos &amp; gifs\n` +
+    `${ce(E.twitch, '🟣')} <b>Twitch:</b> clips\n` +
+    `${ce(E.vimeo, '🎞')} <b>Vimeo:</b> video\n` +
+    `${ce(E.ok, '🟧')} <b>Ok:</b> video\n` +
+    `${ce(E.tumblr, '📝')} <b>Tumblr:</b> videos &amp; audio\n` +
+    `${ce(E.likee, '❤️')} <b>Likee:</b> videos\n` +
+    `${ce(E.soundcloud, '☁️')} <b>Soundcloud</b>\n` +
+    `${ce(E.applemusic, '🎶')} <b>Apple Music</b>\n` +
+    `${ce(E.spotify, '🟢')} <b>Spotify</b>\n` +
+    `${ce(E.threads, '🧵')} <b>Threads</b>\n\n` +
+    `${ce(E.star, '⭐')} <b>Subscription:</b> ${subscriptionActive ? 'active' : 'not active'}`;
+
+// Platforms that are not supported yet — shown when "Coming Soon" is tapped
+const comingSoonText = () =>
+    `⏳ <b>Coming soon!</b>\n\n` +
+    `These platforms are on the way:\n\n` +
+    `${ce(E.pinterest, '📌')} <b>Pinterest:</b> videos &amp; stories\n` +
+    `${ce(E.twitter, '🐦')} <b>Twitter (X):</b> videos &amp; voice\n` +
+    `${ce(E.vk, '🔵')} <b>Vk:</b> videos &amp; clips\n` +
+    `${ce(E.reddit, '🟠')} <b>Reddit:</b> videos &amp; gifs\n` +
+    `${ce(E.twitch, '🟣')} <b>Twitch:</b> clips\n` +
+    `${ce(E.vimeo, '🎞')} <b>Vimeo:</b> video\n` +
+    `${ce(E.ok, '🟧')} <b>Ok:</b> video\n` +
+    `${ce(E.tumblr, '📝')} <b>Tumblr:</b> videos &amp; audio\n` +
+    `${ce(E.likee, '❤️')} <b>Likee:</b> videos\n` +
+    `${ce(E.soundcloud, '☁️')} <b>Soundcloud</b>\n` +
+    `${ce(E.applemusic, '🎶')} <b>Apple Music</b>\n` +
+    `${ce(E.spotify, '🟢')} <b>Spotify</b>\n` +
+    `${ce(E.threads, '🧵')} <b>Threads</b>\n\n` +
+    `${ce(E.star, '⭐')} <b>Stay tuned!</b>`;
+
+// ---------- 4. KEYBOARD ----------
+const mainKeyboard = (audioOn = true) => ({
+    inline_keyboard: [
+        // [btn('Add a bot to the chat', 'addbot', E.addbot)],
+        // [btn('Support', 'support', E.support), btn('Change language', 'language', E.language)],
+        // [btn(`Send audio: ${audioOn ? 'on' : 'off'}`, 'toggle_audio', E.audio)],
+        [btn('Coming Soon', 'soon', E.star, 'success')],
+        [btn('Hide', 'hide', E.hide, 'danger')],
+    ],
 });
 
 
@@ -430,11 +528,18 @@ async function downloadMedia(url) {
 const bot = new Telegraf(process.env.TOKEN, { handlerTimeout: BOT_HANDLER_TIMEOUT_MS });
 const adminUsername = process.env.ADMIN_USERNAME?.replace(/^@/, '') || '';
 
+function isAdmin(ctx) {
+    return Boolean(
+        adminUsername &&
+        ctx.from?.username?.toLowerCase() === adminUsername.toLowerCase()
+    );
+}
+
 function getAdminContactMarkup() {
     if (!adminUsername) return undefined;
 
     return Markup.inlineKeyboard([
-        [Markup.button.url('Need a bot? Contact Admin', `https://t.me/${adminUsername}`)]
+        [Markup.button.url('Need a bot? Contact Developer Here', `https://t.me/${adminUsername}`)]
     ]);
 }
 
@@ -454,27 +559,114 @@ bot.catch(async (err, ctx) => {
     }
 });
 
+// bot.start(async (ctx) => {
+//     const name = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || "there";
+
+//     try {
+//         await ctx.reply(
+//             `👋 ${userGreetings()} ${name}\n\n` +
+//             `Send me a link from any of the following sources and I'll download it for you! \n\n` +
+//             `🎵 TikTok\n📸 Instagram\n📘 Facebook\n▶️ YouTube\n\n`
+//         );
+//     } catch (err) {
+//         console.error('Start command error:', err.message);
+//         try {
+//             await ctx.reply(`👋 ${userGreetings()} ${name} Send me a TikTok, Instagram, Facebook or YouTube link!`);
+//         } catch (replyErr) {
+//             console.error('Start command reply error:', replyErr.message);
+//         }
+//     }
+// });
+
+
+
+// ---------- 1. ICON IDS (replace these one by one) ----------
+
+
+// ---------- 5. HANDLERS ----------
 bot.start(async (ctx) => {
+    const name = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || 'there';
     try {
-        const name = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || "there";
-        // const name = ctx.from.first_name || ctx.from.username || "there";
         await ctx.reply(
-            `👋 ${userGreetings()}\n\n` 
-                `👤 ${name}\n\n` +
-            `🎵 TikTok\n📸 Instagram\n📘 Facebook\n▶️ YouTube\n\n` +
-            `Send me a link and I'll download it for you!`
+            `👋 ${esc(userGreetings())} ${esc(name)}\n\n` +
+            `Send me a link from any of the following sources and I'll download it for you!\n\n` +
+            `${ce(E.tiktok, '🎵')} TikTok\n` +
+            `${ce(E.instagram, '📸')} Instagram\n` +
+            `${ce(E.facebook, '📘')} Facebook\n` +
+            `${ce(E.youtube, '▶️')} YouTube\n\n` +
+            `Completely free, No limits. Enjoy !`,
+            { parse_mode: 'HTML', reply_markup: mainKeyboard(true) }
         );
     } catch (err) {
-        try {
-            const name = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || "there";
-            await ctx.reply(`👋 ${userGreetings()} ${name} Send me a TikTok, Instagram, Facebook or YouTube link!`);
-        } catch (replyErr) {
-            console.error('Start command reply error:', replyErr.message);
-        }
+        console.error('start error:', err.message);
     }
 });
 
+bot.command('options', async (ctx) => {
+    try {
+        await ctx.reply(optionsText(false), {
+            parse_mode: 'HTML',
+            reply_markup: mainKeyboard(true),
+        });
+    } catch (err) {
+        console.error('options error:', err.message);
+    }
+});
 
+bot.action('hide', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.deleteMessage().catch(() => { });
+});
+
+bot.action('soon', async (ctx) => {
+    try {
+        await ctx.answerCbQuery('Coming soon!');
+        await ctx.reply(comingSoonText(), {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [[btn('Hide', 'hide', E.hide, 'danger')]],
+            },
+        });
+    } catch (err) {
+        console.error('soon error:', err.message);
+    }
+});
+
+bot.command('emojiids', async (ctx) => {
+    const set = await ctx.telegram.getStickerSet('savedtiktoka_by_emoji_saverbot');
+    const lines = set.stickers.map(s => `${s.emoji} ${s.custom_emoji_id}`);
+    await ctx.reply(lines.join('\n').slice(0, 4000));
+});
+
+
+bot.command('showpack', async (ctx) => {
+    const set = await ctx.telegram.getStickerSet(PACK);
+    const items = set.stickers.map((s, i) => ({ n: i + 1, id: s.custom_emoji_id, fb: s.emoji }));
+
+    // 40 per message stays under Telegram's entity and length limits
+    for (let i = 0; i < items.length; i += 40) {
+        const chunk = items.slice(i, i + 40);
+        const text = chunk
+            .map(x => `${x.n}. <tg-emoji emoji-id="${x.id}">${x.fb}</tg-emoji> <code>${x.id}</code>`)
+            .join('\n');
+        await ctx.reply(text, { parse_mode: 'HTML' });
+    }
+});
+
+bot.command('logos', async (ctx) => {
+    const set = await ctx.telegram.getStickerSet('savedtiktoka_by_emoji_saverbot');
+    const want = new Set(['🌐', '🎧', '🎵', '📸', '📺', '🔴', '🎬', '📹', '💬', '👤', '🔗']);
+    const items = set.stickers
+        .map((s, i) => ({ n: i + 1, id: s.custom_emoji_id, fb: s.emoji }))
+        .filter(x => want.has(x.fb));
+
+    for (let i = 0; i < items.length; i += 20) {
+        const text = items.slice(i, i + 20)
+            .map(x => `${x.n}. <tg-emoji emoji-id="${x.id}">${x.fb}</tg-emoji> <code>${x.id}</code>`)
+            .join('\n');
+        await ctx.reply(text, { parse_mode: 'HTML' });
+    }
+});
 
 bot.on('text', async (ctx, next) => {
     if (ctx.message.text.trim().startsWith('/')) {
@@ -523,7 +715,7 @@ bot.on('text', async (ctx, next) => {
                     type: 'photo',
                     media: imageUrl,
                     caption: (i === 0 && index === 0)
-                        ? `📸 ${result.title}\n\nTiktok Downloader Bot Developed by Hanter | https://t.me/${adminUsername}`
+                        ? `📸 ${result.title}\n\nTiktok Downloader Bot Developed by Grealishgit`
                         : undefined
                 }));
 
@@ -552,7 +744,7 @@ bot.on('text', async (ctx, next) => {
                 await ctx.replyWithVideo(
                     { url: result.video },
                     {
-                        caption: `🎬 ${result.title}\n\n Tiktok Downloader Bot Developed by Hanter | https://t.me/${adminUsername}`,
+                        caption: `🎬 ${result.title}\n\n Tiktok Downloader Bot Developed by Grealishgit `,
                         ...getAdminContactMarkup()
                     }
                 );
@@ -591,23 +783,27 @@ bot.on('text', async (ctx, next) => {
 });
 
 bot.command('stats', async (ctx) => {
+    if (!isAdmin(ctx)) return;
     const { total, monthly } = await getBotStats();
     const name = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || 'there';
     await ctx.reply(
-        `Hey ${name}!\n` +
-        `The bot is running smoothly.\n\n` +
-        `📊 Bot Stats:\n` +
+        // `Hey ${adminUsername}!\n` +
+        `Hey Admin!\n` +
+        `The bot is running smoothly Here are the bot stats.\n\n` +
+        `Bot Stats:\n` +
         `👥 ${total.toLocaleString()} total users\n` +
         `📅 ${monthly.toLocaleString()} joined this month`
     );
 });
 
-bot.command('up', async (ctx) => {
+bot.command('link', async (ctx) => {
     const name = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || 'there';
-    await ctx.reply(`Hey ${name}!\nThe bot is up and running smoothly.`);
+    await ctx.reply(`Hey ${adminUsername}!\nPlease resend the link to intiate the download.`);
 });
 
 bot.command('uptime', async (ctx) => {
+    if (!isAdmin(ctx)) return;
+
     const totalSeconds = Math.floor(process.uptime());
     const days = Math.floor(totalSeconds / 86400);
     const hours = Math.floor((totalSeconds % 86400) / 3600);
@@ -615,7 +811,7 @@ bot.command('uptime', async (ctx) => {
     const seconds = totalSeconds % 60;
     const uptime = `${days}d ${hours}h ${minutes}m ${seconds}s`;
 
-    await ctx.reply(`Bot has been up: ${uptime}`);
+    await ctx.reply(`Bot has been up running smoothly for: ${uptime}`);
 });
 
 bot.on('text', async (ctx) => {
@@ -654,7 +850,9 @@ app.post('/api/download/video', async (req, res) => {
     try {
         const url = req.body?.url;
         if (!url || !url.includes('tiktok.com')) {
-            return res.status(400).json({ error: 'Please provide a valid TikTok URL' });
+            return res.status(400).json({
+                error: 'Please provide a valid TikTok URL'
+            });
         }
         const result = await downloadTikTok(url);
         if (result.type !== 'video') return res.status(404).json({ error: 'Not a video post' });
