@@ -6,7 +6,10 @@ import { Markup, Telegraf } from "telegraf";
 import job from './lib/cron.js';
 import { create as createYoutubeDl } from 'youtube-dl-exec';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import FormData from 'form-data';
+import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 
 import User from './models/User.js';
@@ -31,6 +34,14 @@ const YTDLP_TIMEOUT_OPTIONS = {
     timeout: DOWNLOAD_TIMEOUT_MS,
     killSignal: 'SIGKILL'
 };
+
+// YouTube files are downloaded to the server because direct googlevideo URLs are
+// bound to this machine's IP and expire, so Telegram cannot fetch them itself.
+const TELEGRAM_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024; // Bot API upload limit
+const YT_TEMP_PREFIX = 'yt_';
+const YT_TEMP_MAX_AGE_MS = 60 * 60 * 1000;
+const YT_QUALITY_STEPS = [720, 480, 360]; // tried in order until the file fits
+const YT_MAX_CONCURRENT_DOWNLOADS = 2;
 
 // CORS configuration
 const allowedOrigins = [
@@ -213,9 +224,9 @@ function createYtDlpMissingError() {
     return error;
 }
 
-async function runYtDlp(url, flags) {
+async function runYtDlp(url, flags, options = YTDLP_TIMEOUT_OPTIONS) {
     try {
-        return await youtubeDl(url, { 'js-runtimes': `node:${process.execPath}`, ...flags }, YTDLP_TIMEOUT_OPTIONS);
+        return await youtubeDl(url, { 'js-runtimes': `node:${process.execPath}`, ...flags }, options);
     } catch (err) {
         if (isAnyTimeoutError(err)) throw createDownloadTimeoutError();
         if (isYtDlpMissingError(err)) {
@@ -395,31 +406,132 @@ function isYouTubeBotCheckError(err) {
     );
 }
 
+// ─── YouTube temp files ──────────────────────────────────────────────────────
+async function removeYouTubeTempFile(filePath) {
+    if (!filePath) return;
+
+    try {
+        await fs.promises.unlink(filePath);
+    } catch (err) {
+        if (err.code !== 'ENOENT') console.error('Could not delete temp file:', err.message);
+    }
+}
+
+async function cleanupStaleYouTubeTempFiles() {
+    let entries;
+
+    try {
+        entries = await fs.promises.readdir(os.tmpdir());
+    } catch (err) {
+        console.error('Temp cleanup scan failed:', err.message);
+        return;
+    }
+
+    const cutoff = Date.now() - YT_TEMP_MAX_AGE_MS;
+    let removed = 0;
+
+    for (const name of entries) {
+        if (!name.startsWith(YT_TEMP_PREFIX)) continue;
+
+        const filePath = path.join(os.tmpdir(), name);
+
+        try {
+            const stat = await fs.promises.stat(filePath);
+            if (stat.isFile() && stat.mtimeMs < cutoff) {
+                await fs.promises.unlink(filePath);
+                removed += 1;
+            }
+        } catch (err) {
+            if (err.code !== 'ENOENT') console.error('Temp cleanup error:', err.message);
+        }
+    }
+
+    if (removed > 0) console.log(`Removed ${removed} stale YouTube temp file(s)`);
+}
+
+// Cap simultaneous YouTube downloads so the small server is not overloaded.
+let activeYouTubeDownloads = 0;
+const youTubeDownloadQueue = [];
+
+function acquireYouTubeDownloadSlot() {
+    if (activeYouTubeDownloads < YT_MAX_CONCURRENT_DOWNLOADS) {
+        activeYouTubeDownloads += 1;
+        return Promise.resolve();
+    }
+
+    return new Promise(resolve => youTubeDownloadQueue.push(resolve));
+}
+
+function releaseYouTubeDownloadSlot() {
+    const next = youTubeDownloadQueue.shift();
+
+    if (next) {
+        next(); // hand the slot straight over; the count stays the same
+        return;
+    }
+
+    activeYouTubeDownloads = Math.max(0, activeYouTubeDownloads - 1);
+}
+
+function buildVideoProxyUrl(filePath) {
+    const base = (BACKEND_URL || '').replace(/\/$/, '');
+    return `${base}/api/video?file=${encodeURIComponent(path.basename(filePath))}`;
+}
+
+// Telegraf's multipart uploads are chunked, and Telegram closes the connection
+// on them ("socket hang up"). Upload through axios with an explicit
+// Content-Length computed from the file size instead.
+async function sendVideoFileToChat(ctx, filePath, caption) {
+    const { size } = await fs.promises.stat(filePath);
+    const form = new FormData();
+
+    form.append('chat_id', String(ctx.chat.id));
+    form.append('video', fs.createReadStream(filePath), {
+        filename: path.basename(filePath),
+        contentType: 'video/mp4',
+        knownLength: size,
+    });
+    form.append('caption', caption);
+    form.append('supports_streaming', 'true');
+
+    const markup = getAdminContactMarkup();
+    if (markup?.reply_markup) form.append('reply_markup', JSON.stringify(markup.reply_markup));
+
+    const apiRoot = (bot.telegram.options?.apiRoot || 'https://api.telegram.org').replace(/\/$/, '');
+    const { data } = await axios.post(
+        `${apiRoot}/bot${bot.telegram.token}/sendVideo`,
+        form,
+        {
+            headers: { ...form.getHeaders(), 'Content-Length': form.getLengthSync() },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+            timeout: 5 * 60 * 1000,
+        }
+    );
+
+    if (!data?.ok) throw new Error(data?.description || 'Telegram rejected the video upload');
+
+    return data.result;
+}
+
 
 async function downloadYouTube(url) {
-    const baseFlags = {
-        //   dumpSingleJson: true,
-        //   noWarnings: true,
-        //   noCheckCertificate: true,
-        //   addHeader: ['referer:https://www.youtube.com', 'user-agent:Mozilla/5.0'],
-        // Without a JS runtime YouTube extraction is deprecated and only video-only
-        // DASH streams are returned, leaving no combined format to pick.
-        //     jsRuntimes: 'node',
-        // The default (visionos/web) clients also return video-only DASH streams for
-        // most modern uploads, so a combined video+audio format never appears. The
-        // android client still serves the progressive format 18 (360p mp4).
-        //    extractorArgs: 'youtube:player_client=android',
-        // NOTE: deliberately no `format` flag. Format selection happens below from
-        // info.formats, and passing a selector here makes yt-dlp hard-fail with
-        // "Requested format is not available" on videos lacking a combined stream,
-        // even though all we need is the JSON.
+    const metadataFlags = {
+        // Without dumpSingleJson yt-dlp downloads the file and returns progress
+        // text instead of JSON, so info.formats is undefined.
+        dumpSingleJson: true,
+        noWarnings: true,
+        noCheckCertificate: true,
+        // NOTE: deliberately no `format` flag. A selector here makes yt-dlp
+        // hard-fail with "Requested format is not available" on videos lacking a
+        // combined stream, even though all we need is the JSON.
     };
 
     const configuredCookieFlags = getYouTubeCookieFlags();
     let info;
 
     try {
-        info = await runYtDlp(url, baseFlags);
+        info = await runYtDlp(url, metadataFlags);
     } catch (err) {
         if (isDownloadTimeoutError(err)) throw err;
         if (err?.name === 'YtDlpMissingError') throw err;
@@ -441,7 +553,7 @@ async function downloadYouTube(url) {
         for (const attempt of cookieAttempts) {
             try {
                 info = await runYtDlp(url, {
-                    ...baseFlags,
+                    ...metadataFlags,
                     ...attempt.flags,
                 });
 
@@ -478,33 +590,7 @@ async function downloadYouTube(url) {
         };
     }
 
-    // Pick best SINGLE-FILE format (video+audio combined, no ffmpeg merge needed).
-    // A video-only stream would be delivered as silent video, so only combined
-    // formats are acceptable here.
-    const combined = (info.formats || [])
-        .filter(f =>
-            f.vcodec !== 'none' &&
-            f.acodec !== 'none' &&
-            f.url
-        )
-        .sort((a, b) => (b.height || 0) - (a.height || 0)); // highest quality first
-
-    let videoUrl = combined[0]?.url;
-
-    // info.url is the extractor's own pick — accept it only if it is combined too.
-    if (!videoUrl && info.url && (info.formats || []).some(
-        f => f.url === info.url && f.vcodec !== 'none' && f.acodec !== 'none'
-    )) {
-        videoUrl = info.url;
-    }
-
-    if (!videoUrl) {
-        throw new Error('No single-file video format available for this video. Higher quality requires ffmpeg.');
-    }
-
-    return {
-        type: 'video',
-        video: videoUrl,
+    const metadata = {
         title: info.title || 'YouTube Video',
         author: info.uploader || info.channel || null,
         duration: info.duration || null,
@@ -513,7 +599,165 @@ async function downloadYouTube(url) {
         like_count: info.like_count || null,
         upload_date: info.upload_date || null,
     };
+
+    const watchUrl = info.webpage_url || url;
+    const qualitySteps = YT_QUALITY_STEPS.filter(height => {
+        const estimated = estimateYouTubeSizeBytes(info, height);
+
+        if (estimated && estimated > TELEGRAM_UPLOAD_LIMIT_BYTES) {
+            console.warn(
+                `Skipping YouTube ${height}p: estimated ${(estimated / 1024 / 1024).toFixed(1)} MB ` +
+                `(limit ${TELEGRAM_UPLOAD_LIMIT_BYTES / 1024 / 1024} MB)`
+            );
+            return false;
+        }
+
+        return true;
+    });
+
+    const downloaded = await downloadYouTubeVideoFile(watchUrl, configuredCookieFlags, qualitySteps);
+
+    if (!downloaded) {
+        return {
+            type: 'video',
+            video: watchUrl,
+            webpage_url: watchUrl,
+            file: null,
+            tooLarge: true,
+            ...metadata,
+        };
+    }
+
+    return {
+        type: 'video',
+        video: buildVideoProxyUrl(downloaded.file),
+        webpage_url: watchUrl,
+        file: downloaded.file,
+        height: downloaded.height,
+        ...metadata,
+    };
 }
+
+// Rough merged-size estimate (video-only mp4 + m4a audio) used to skip
+// qualities that would obviously exceed the upload limit. Returns null when the
+// sizes are unknown, in which case we just try the download.
+function estimateYouTubeSizeBytes(info, height) {
+    const formats = (info.formats || []).filter(f => f.url && f.protocol !== 'mhtml');
+    const allVideos = formats
+        .filter(f => f.vcodec !== 'none' && f.acodec === 'none' && f.ext === 'mp4' && f.height && f.height <= height);
+    const avcVideos = allVideos.filter(f => String(f.vcodec).startsWith('avc1'));
+    const videos = (avcVideos.length > 0 ? avcVideos : allVideos)
+        .sort((a, b) => b.height - a.height || (b.tbr || 0) - (a.tbr || 0));
+    const audios = formats
+        .filter(f => f.vcodec === 'none' && f.acodec !== 'none' && f.ext === 'm4a')
+        .sort((a, b) => (b.tbr || 0) - (a.tbr || 0));
+
+    const videoSize = videos[0]?.filesize || videos[0]?.filesize_approx || null;
+    const audioSize = audios[0]?.filesize || audios[0]?.filesize_approx || null;
+
+    return videoSize && audioSize ? videoSize + audioSize : null;
+}
+
+// Download at the highest quality that still fits Telegram's upload limit.
+// Returns { file, height } or null when every quality attempt was too large.
+async function downloadYouTubeVideoFile(url, cookieFlags, qualitySteps = YT_QUALITY_STEPS) {
+    await acquireYouTubeDownloadSlot();
+
+    let lastError = null;
+
+    try {
+        for (const height of qualitySteps) {
+            let filePath;
+
+            try {
+                filePath = await downloadYouTubeFile(url, height, cookieFlags);
+            } catch (err) {
+                if (isDownloadTimeoutError(err)) throw err;
+                if (err?.name === 'YtDlpMissingError') throw err;
+                console.error(`YouTube ${height}p download failed:`, err.message || err.stderr || err);
+                lastError = err;
+                continue;
+            }
+
+            const { size } = await fs.promises.stat(filePath);
+
+            if (size <= TELEGRAM_UPLOAD_LIMIT_BYTES) {
+                return { file: filePath, height };
+            }
+
+            await removeYouTubeTempFile(filePath);
+            console.warn(
+                `YouTube ${height}p file is ${(size / 1024 / 1024).toFixed(1)} MB ` +
+                `(limit ${TELEGRAM_UPLOAD_LIMIT_BYTES / 1024 / 1024} MB), retrying lower quality`
+            );
+        }
+    } finally {
+        releaseYouTubeDownloadSlot();
+    }
+
+    if (lastError) throw lastError;
+
+    return null;
+}
+
+async function downloadYouTubeFile(url, height, cookieFlags) {
+    const token = `${Date.now()}_${randomUUID()}`;
+    const prefix = `${YT_TEMP_PREFIX}${token}`;
+    const tempDir = os.tmpdir();
+
+    const flags = {
+        // Prefer H.264 + AAC so ffmpeg can merge without re-encoding and every
+        // Telegram client can play the result (AV1 mp4 is not universal).
+        // Then fall back to any mp4 video, then a progressive combined mp4,
+        // then anything at or below the height cap.
+        format: [
+            `bv*[height<=${height}][ext=mp4][vcodec^=avc1]+ba[ext=m4a]`,
+            `bv*[height<=${height}][ext=mp4]+ba[ext=m4a]`,
+            `b[ext=mp4][height<=${height}]`,
+            `b[height<=${height}]`,
+            `b`,
+        ].join('/'),
+        mergeOutputFormat: 'mp4',
+        output: path.join(tempDir, `${prefix}.%(ext)s`),
+        noPlaylist: true,
+        noWarnings: true,
+        ...cookieFlags,
+    };
+
+    try {
+        await runYtDlp(url, flags);
+    } catch (err) {
+        // Remove whatever this attempt left behind (e.g. a .part file).
+        const leftovers = (await fs.promises.readdir(tempDir))
+            .filter(name => name.startsWith(`${prefix}.`))
+            .map(name => path.join(tempDir, name));
+
+        await Promise.all(leftovers.map(removeYouTubeTempFile));
+        throw err;
+    }
+
+    const produced = (await fs.promises.readdir(tempDir))
+        .filter(name => name.startsWith(`${prefix}.`) && !name.endsWith('.part'))
+        .map(name => path.join(tempDir, name));
+
+    if (produced.length === 0) {
+        throw new Error('yt-dlp finished without producing a video file.');
+    }
+
+    // Normally there is exactly one file; if not, keep the largest.
+    const withSizes = await Promise.all(produced.map(async filePath => ({
+        filePath,
+        size: (await fs.promises.stat(filePath)).size,
+    })));
+    withSizes.sort((a, b) => b.size - a.size);
+
+    for (const extra of withSizes.slice(1)) {
+        await removeYouTubeTempFile(extra.filePath);
+    }
+
+    return withSizes[0].filePath;
+}
+
 
 // ─── Master download function ─────────────────────────────────────────────────
 async function downloadMedia(url) {
@@ -741,22 +985,50 @@ bot.on('text', async (ctx, next) => {
             await ctx.reply('Want your own downloader bot?', getAdminContactMarkup());
 
         } else if (result.type === 'video') {
-            try {
-                await ctx.replyWithVideo(
-                    { url: result.video },
-                    {
-                        caption: `🎬 ${result.title}\n\n Tiktok Downloader Bot Developed by Grealishgit `,
-                        ...getAdminContactMarkup()
-                    }
-                );
-            } catch (videoErr) {
-                // Telegram has a 50MB bot upload limit — fall back to link
-                console.error('Video send failed (likely too large):', videoErr.message);
+            if (result.file) {
+                // YouTube: the file was downloaded on the server (direct googlevideo
+                // URLs are IP-bound and expire, so Telegram cannot fetch them).
+                try {
+                    await sendVideoFileToChat(
+                        ctx,
+                        result.file,
+                        `🎬 ${result.title}\n\n Tiktok Downloader Bot Developed by Grealishgit `
+                    );
+                    console.log(`Sent YouTube video (<=${result.height}p): ${result.title}`);
+                } catch (videoErr) {
+                    console.error('Video upload failed:', videoErr.message);
+                    await ctx.reply(
+                        `⚠️ Could not send the video file.\n\n` +
+                        `🔗 Watch it here:\n${result.webpage_url || result.video}`,
+                        getAdminContactMarkup()
+                    );
+                } finally {
+                    await removeYouTubeTempFile(result.file);
+                }
+            } else if (result.tooLarge) {
                 await ctx.reply(
-                    `⚠️ The video is too large for Telegram to send directly.\n\n` +
-                    `🔗 Direct link (tap & hold to save):\n${result.video}`,
+                    `⚠️ This video is too large for Telegram (bot upload limit is 50 MB).\n\n` +
+                    `🔗 Watch it here:\n${result.video}`,
                     getAdminContactMarkup()
                 );
+            } else {
+                try {
+                    await ctx.replyWithVideo(
+                        { url: result.video },
+                        {
+                            caption: `🎬 ${result.title}\n\n Tiktok Downloader Bot Developed by Grealishgit `,
+                            ...getAdminContactMarkup()
+                        }
+                    );
+                } catch (videoErr) {
+                    // Telegram has a 50MB bot upload limit — fall back to link
+                    console.error('Video send failed (likely too large):', videoErr.message);
+                    await ctx.reply(
+                        `⚠️ The video is too large for Telegram to send directly.\n\n` +
+                        `🔗 Direct link (tap & hold to save):\n${result.video}`,
+                        getAdminContactMarkup()
+                    );
+                }
             }
         } else if (result.type === 'playlist') {
             // Telegram can't bulk-send a playlist, so send a summary with links
@@ -834,10 +1106,12 @@ app.post('/api/download', async (req, res) => {
         if (!platform) return res.status(400).json({ error: 'Unsupported platform' });
 
         const result = await downloadMedia(url);
+        // `file` is a server-side temp path used by the bot; API clients use `video`.
+        const { file, ...publicResult } = result;
         res.json({
             platform,
             adminUsername: process.env.ADMIN_USERNAME || '',
-            ...result
+            ...publicResult
         });
 
     } catch (error) {
@@ -901,6 +1175,55 @@ app.get('/api/image', async (req, res) => {
 
 // Video proxy (bypass CORS)
 app.get('/api/video', async (req, res) => {
+    // Locally downloaded YouTube files (see downloadYouTube) are served from the
+    // temp directory. Only yt_* files are allowed.
+    const requestedFile = req.query.file;
+
+    if (requestedFile) {
+        const fileName = path.basename(String(requestedFile));
+
+        if (!fileName.startsWith(YT_TEMP_PREFIX)) {
+            return res.status(400).json({ error: 'Invalid file' });
+        }
+
+        const filePath = path.join(os.tmpdir(), fileName);
+
+        try {
+            const stat = await fs.promises.stat(filePath);
+            if (!stat.isFile()) throw new Error('not a file');
+
+            res.setHeader('Content-Type', 'video/mp4');
+            res.setHeader('Accept-Ranges', 'bytes');
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+
+            const range = req.headers.range;
+
+            if (range) {
+                const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+                const start = match && match[1] ? Number(match[1]) : 0;
+                const end = match && match[2] ? Math.min(Number(match[2]), stat.size - 1) : stat.size - 1;
+
+                if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= stat.size) {
+                    res.setHeader('Content-Range', `bytes */${stat.size}`);
+                    return res.status(416).end();
+                }
+
+                res.status(206);
+                res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`);
+                res.setHeader('Content-Length', end - start + 1);
+                fs.createReadStream(filePath, { start, end }).pipe(res);
+                return;
+            }
+
+            res.setHeader('Content-Length', stat.size);
+            fs.createReadStream(filePath).pipe(res);
+            return;
+        } catch (error) {
+            console.error('Local video proxy error:', error.message);
+            return res.status(404).json({ error: 'File not found or expired' });
+        }
+    }
+
     try {
         const videoUrl = req.query.url;
         if (!videoUrl) return res.status(400).json({ error: 'Video URL required' });
@@ -963,6 +1286,9 @@ async function updateBotDescription() {
 const server = app.listen(PORT, async () => {
     console.log(`Multi-Platform Downloader API running on port ${PORT}`);
     // console.log(`Frontend URL: ${frontendURL}`);
+
+    await cleanupStaleYouTubeTempFiles();
+    setInterval(cleanupStaleYouTubeTempFiles, YT_TEMP_MAX_AGE_MS);
 
     try {
         job.start();
