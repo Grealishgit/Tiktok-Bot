@@ -456,15 +456,11 @@ bot.catch(async (err, ctx) => {
 
 bot.start(async (ctx) => {
     try {
-        const { total, monthly } = await getBotStats();
         const name = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || "there";
         // const name = ctx.from.first_name || ctx.from.username || "there";
         await ctx.reply(
-            `👋 ${userGreetings()}\n\n` +
-            `👤 ${name}\n\n` +
-            `📊 Bot Stats:\n` +
-            `👥 ${total.toLocaleString()} total users\n` +
-            `📅 ${monthly.toLocaleString()} joined this month\n\n` +
+            `👋 ${userGreetings()}\n\n` 
+                `👤 ${name}\n\n` +
             `🎵 TikTok\n📸 Instagram\n📘 Facebook\n▶️ YouTube\n\n` +
             `Send me a link and I'll download it for you!`
         );
@@ -565,8 +561,8 @@ bot.on('text', async (ctx, next) => {
                 console.error('Video send failed (likely too large):', videoErr.message);
                 await ctx.reply(
                     `⚠️ The video is too large for Telegram to send directly.\n\n` +
-                        `🔗 Direct link (tap & hold to save):\n${result.video}`,
-                        getAdminContactMarkup()
+                    `🔗 Direct link (tap & hold to save):\n${result.video}`,
+                    getAdminContactMarkup()
                 );
             }
         } else if (result.type === 'playlist') {
@@ -594,10 +590,16 @@ bot.on('text', async (ctx, next) => {
     }
 });
 
-
-bot.command('status', async (ctx) => {
+bot.command('stats', async (ctx) => {
+    const { total, monthly } = await getBotStats();
     const name = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name || 'there';
-    await ctx.reply(`Hey ${name}!\nThe bot is running smoothly.`);
+    await ctx.reply(
+        `Hey ${name}!\n` +
+        `The bot is running smoothly.\n\n` +
+        `📊 Bot Stats:\n` +
+        `👥 ${total.toLocaleString()} total users\n` +
+        `📅 ${monthly.toLocaleString()} joined this month`
+    );
 });
 
 bot.command('up', async (ctx) => {
@@ -759,7 +761,6 @@ async function updateBotDescription() {
 }
 
 // ─── Start server ─────
-
 const server = app.listen(PORT, async () => {
     console.log(`Multi-Platform Downloader API running on port ${PORT}`);
     // console.log(`Frontend URL: ${frontendURL}`);
