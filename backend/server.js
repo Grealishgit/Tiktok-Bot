@@ -159,7 +159,7 @@ const mainKeyboard = (audioOn = true) => ({
         // [btn('Add a bot to the chat', 'addbot', E.addbot)],
         // [btn('Support', 'support', E.support), btn('Change language', 'language', E.language)],
         // [btn(`Send audio: ${audioOn ? 'on' : 'off'}`, 'toggle_audio', E.audio)],
-        [btn('Coming Soon', 'soon', E.star, 'success')],
+        [btn('What\'s Coming Soon', 'soon', E.star, 'success')],
         [btn('Hide', 'hide', E.hide, 'danger')],
     ],
 });
