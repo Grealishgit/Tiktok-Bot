@@ -104,10 +104,10 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const ce = (id, fallback) => (id ? `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>` : fallback);
 
 // inline button with optional custom icon
-const btn = (text, data, iconId,style) => {
+const btn = (text, data, iconId, style) => {
     const b = { text, callback_data: data };
     if (iconId) b.icon_custom_emoji_id = iconId;
-     if (style) b.style = style;   // 'primary' | 'success' | 'danger'
+    if (style) b.style = style;   // 'primary' | 'success' | 'danger'
     return b;
 };
 
@@ -834,8 +834,15 @@ bot.start(async (ctx) => {
     try {
         await ctx.reply(
             `👋 ${esc(userGreetings())} ${esc(name)}\n\n` +
-            `Send me a link from any of the following sources and I'll download it for you!\n\n` +
-            `${ce(E.tiktok, '🎵')} TikTok\n` +
+            `This bot downloads videos/photos/audio from popular social networks through copied links!\n\n`
+                `How to use\n` +
+            `1. Open one of the social networks\n.` +
+            `2. Choose the video/photo you are interested with.\n` +
+            `3. Tap the "Copy link" or "Share" button.\n` +
+            `4. Send the 🔗 link to the bot and get the downloaded file.\n\n` +
+            `Note: The bot will automatically detect the type of content and download it accordingly.\n\n` +
+            ` The bot can download media from:`
+                `${ce(E.tiktok, '🎵')} TikTok\n` +
             `${ce(E.instagram, '📸')} Instagram\n` +
             `${ce(E.facebook, '📘')} Facebook\n` +
             `${ce(E.youtube, '▶️')} YouTube\n\n` +
@@ -1274,7 +1281,7 @@ async function updateBotDescription() {
     try {
         const { total } = await getBotStats();
         await bot.telegram.setMyDescription(
-            `⚡ Fast TikTok, Instagram, Facebook & YouTube downloader\n\n ${total.toLocaleString()} total users`
+            `⚡ Fast Free TikTok, Instagram, Facebook & YouTube Downloader with no limits and no ads\n\n ${total.toLocaleString()} total users`
         );
         console.log('Bot description updated');
     } catch (err) {
