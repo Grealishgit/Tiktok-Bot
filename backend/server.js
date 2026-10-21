@@ -834,7 +834,7 @@ bot.start(async (ctx) => {
     try {
         await ctx.reply(
             `👋 ${esc(userGreetings())} ${esc(name)}\n\n` +
-            `This bot downloads videos/photos/audio from popular social networks through copied links!\n\n`
+            `This bot downloads videos/photos/audio from popular social networks through copied links!\n\n` +
                 `How to use\n` +
             `1. Open one of the social networks\n.` +
             `2. Choose the video/photo you are interested with.\n` +
