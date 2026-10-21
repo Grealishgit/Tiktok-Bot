@@ -841,11 +841,13 @@ bot.start(async (ctx) => {
             `3. Tap the "Copy link" or "Share" button.\n` +
             `4. Send the 🔗 link to the bot and get the downloaded file.\n\n` +
             `Note: The bot will automatically detect the type of content and download it accordingly.\n\n` +
-            ` The bot can download media from:`
+
+            ` The bot can download media from:\n` +
                 `${ce(E.tiktok, '🎵')} TikTok\n` +
             `${ce(E.instagram, '📸')} Instagram\n` +
             `${ce(E.facebook, '📘')} Facebook\n` +
             `${ce(E.youtube, '▶️')} YouTube\n\n` +
+
             `Completely free, No limits. Enjoy !`,
             { parse_mode: 'HTML', reply_markup: mainKeyboard(true) }
         );
