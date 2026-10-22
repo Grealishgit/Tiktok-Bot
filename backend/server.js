@@ -44,6 +44,8 @@ const YT_TEMP_PREFIX = 'yt_';
 const YT_TEMP_MAX_AGE_MS = 60 * 60 * 1000;
 const YT_QUALITY_STEPS = [720, 480, 360]; // tried in order until the file fits
 const YT_MAX_CONCURRENT_DOWNLOADS = 2;
+const YT_QUALITY_SELECTION_TTL_MS = 10 * 60 * 1000;
+const YT_MAX_SELECTABLE_HEIGHT = 1080;
 
 // Instagram/Facebook media is downloaded to the server too: Telegram's own
 // fetcher is often rejected by those CDNs, and sending by URL is capped at
@@ -56,6 +58,10 @@ const IG_COMPRESS_STEPS = [
     { crf: 32, maxHeight: 360, maxRateKbps: 900, audioKbps: 64 },
 ];
 const TELEGRAM_CAPTION_LIMIT = 1024; // Bot API caption limit, else send fails
+
+// A quality selection is intentionally short-lived: YouTube formats and their
+// signed URLs change, and callback data must stay well below Telegram's limit.
+const pendingYouTubeQualitySelections = new Map();
 
 // CORS configuration
 const allowedOrigins = [
@@ -761,7 +767,10 @@ async function sendVideoFileToChat(ctx, filePath, caption) {
 }
 
 
-async function downloadYouTube(url) {
+// Fetch metadata once before either presenting the quality selector or
+// downloading. Keeping this separate prevents a button click from having to
+// rediscover the same video formats.
+async function getYouTubeInfo(url) {
     const metadataFlags = {
         // Without dumpSingleJson yt-dlp downloads the file and returns progress
         // text instead of JSON, so info.formats is undefined.
@@ -821,6 +830,45 @@ async function downloadYouTube(url) {
         }
     }
 
+    return { info, configuredCookieFlags };
+}
+
+function getYouTubeQualityOptions(info) {
+    const videos = (info.formats || [])
+        .filter(format =>
+            format.url &&
+            format.protocol !== 'mhtml' &&
+            format.vcodec !== 'none' &&
+            Number.isFinite(format.height) &&
+            format.height > 0 &&
+            format.height <= YT_MAX_SELECTABLE_HEIGHT
+        );
+
+    // Prefer MP4 choices because the resulting video is most compatible with
+    // Telegram, but keep other formats as a fallback when MP4 is unavailable.
+    const compatibleVideos = videos.filter(format => format.ext === 'mp4');
+    const heights = [...new Set((compatibleVideos.length ? compatibleVideos : videos)
+        .map(format => format.height))]
+        .sort((a, b) => b - a);
+
+    return heights.filter(height => {
+        const estimated = estimateYouTubeSizeBytes(info, height);
+
+        if (estimated && estimated > TELEGRAM_UPLOAD_LIMIT_BYTES) {
+            console.warn(
+                `Not offering YouTube ${height}p: estimated ${(estimated / 1024 / 1024).toFixed(1)} MB ` +
+                `(limit ${TELEGRAM_UPLOAD_LIMIT_BYTES / 1024 / 1024} MB)`
+            );
+            return false;
+        }
+
+        return true;
+    });
+}
+
+async function downloadYouTube(url, { metadataOnly = false } = {}) {
+    const { info, configuredCookieFlags } = await getYouTubeInfo(url);
+
     // YouTube playlists
     if (info.entries && info.entries.length > 0) {
         return {
@@ -847,6 +895,19 @@ async function downloadYouTube(url) {
     };
 
     const watchUrl = info.webpage_url || url;
+
+    if (metadataOnly) {
+        return {
+            type: 'quality_selection',
+            title: metadata.title,
+            webpage_url: watchUrl,
+            qualities: getYouTubeQualityOptions(info),
+            // This is only retained in the in-memory callback state; it is
+            // never returned from an API route or sent to Telegram.
+            cookieFlags: configuredCookieFlags,
+        };
+    }
+
     const qualitySteps = YT_QUALITY_STEPS.filter(height => {
         const estimated = estimateYouTubeSizeBytes(info, height);
 
@@ -904,9 +965,10 @@ function estimateYouTubeSizeBytes(info, height) {
     return videoSize && audioSize ? videoSize + audioSize : null;
 }
 
-// Download at the highest quality that still fits Telegram's upload limit.
-// Returns { file, height } or null when every quality attempt was too large.
-async function downloadYouTubeVideoFile(url, cookieFlags, qualitySteps = YT_QUALITY_STEPS) {
+// Download at the requested quality (or the best automatic fallback) while
+// respecting Telegram's upload limit. Returns { file, height } or null when
+// every attempted quality is too large.
+async function downloadYouTubeVideoFile(url, cookieFlags, qualitySteps = YT_QUALITY_STEPS, strictQuality = false) {
     await acquireYouTubeDownloadSlot();
 
     let lastError = null;
@@ -916,7 +978,7 @@ async function downloadYouTubeVideoFile(url, cookieFlags, qualitySteps = YT_QUAL
             let filePath;
 
             try {
-                filePath = await downloadYouTubeFile(url, height, cookieFlags);
+                filePath = await downloadYouTubeFile(url, height, cookieFlags, strictQuality);
             } catch (err) {
                 if (isDownloadTimeoutError(err)) throw err;
                 if (err?.name === 'YtDlpMissingError') throw err;
@@ -946,7 +1008,7 @@ async function downloadYouTubeVideoFile(url, cookieFlags, qualitySteps = YT_QUAL
     return null;
 }
 
-async function downloadYouTubeFile(url, height, cookieFlags) {
+async function downloadYouTubeFile(url, height, cookieFlags, strictQuality = false) {
     const token = `${Date.now()}_${randomUUID()}`;
     const prefix = `${YT_TEMP_PREFIX}${token}`;
     const tempDir = os.tmpdir();
@@ -956,13 +1018,20 @@ async function downloadYouTubeFile(url, height, cookieFlags) {
         // Telegram client can play the result (AV1 mp4 is not universal).
         // Then fall back to any mp4 video, then a progressive combined mp4,
         // then anything at or below the height cap.
-        format: [
-            `bv*[height<=${height}][ext=mp4][vcodec^=avc1]+ba[ext=m4a]`,
-            `bv*[height<=${height}][ext=mp4]+ba[ext=m4a]`,
-            `b[ext=mp4][height<=${height}]`,
-            `b[height<=${height}]`,
-            `b`,
-        ].join('/'),
+        format: strictQuality
+            ? [
+                `bv*[height=${height}][ext=mp4][vcodec^=avc1]+ba[ext=m4a]`,
+                `bv*[height=${height}][ext=mp4]+ba[ext=m4a]`,
+                `b[ext=mp4][height=${height}]`,
+                `b[height=${height}]`,
+            ].join('/')
+            : [
+                `bv*[height<=${height}][ext=mp4][vcodec^=avc1]+ba[ext=m4a]`,
+                `bv*[height<=${height}][ext=mp4]+ba[ext=m4a]`,
+                `b[ext=mp4][height<=${height}]`,
+                `b[height<=${height}]`,
+                `b`,
+            ].join('/'),
         mergeOutputFormat: 'mp4',
         output: path.join(tempDir, `${prefix}.%(ext)s`),
         noPlaylist: true,
@@ -1032,6 +1101,71 @@ function getAdminContactMarkup() {
     return Markup.inlineKeyboard([
         [Markup.button.url('Need a bot? Contact Developer Here', `https://t.me/${adminUsername}`)]
     ]);
+}
+
+function pruneExpiredYouTubeQualitySelections() {
+    const cutoff = Date.now() - YT_QUALITY_SELECTION_TTL_MS;
+
+    for (const [token, selection] of pendingYouTubeQualitySelections) {
+        if (selection.createdAt < cutoff) pendingYouTubeQualitySelections.delete(token);
+    }
+}
+
+function createYouTubeQualityKeyboard(token, qualities) {
+    const buttons = qualities.map(height => ({
+        text: `${height}p`,
+        callback_data: `ytq:${token}:${height}`,
+    }));
+    const rows = [];
+
+    for (let index = 0; index < buttons.length; index += 3) {
+        rows.push(buttons.slice(index, index + 3));
+    }
+
+    rows.push([{ text: 'Cancel', callback_data: `ytq:${token}:cancel` }]);
+    return { inline_keyboard: rows };
+}
+
+async function sendVideoResultToChat(ctx, result) {
+    if (result.file) {
+        try {
+            await sendVideoFileToChat(ctx, result.file, buildVideoCaption(result.title));
+            console.log(`Sent video file${result.height ? ` (<=${result.height}p)` : ''}: ${result.title}`);
+        } catch (videoErr) {
+            console.error('Video upload failed:', videoErr.message);
+            await ctx.reply(
+                `⚠️ Could not send the video file.\n\n` +
+                `🔗 Watch it here:\n${result.webpage_url || result.video}`,
+                getAdminContactMarkup()
+            );
+        } finally {
+            await removeYouTubeTempFile(result.file);
+        }
+        return;
+    }
+
+    if (result.tooLarge) {
+        await ctx.reply(
+            `⚠️ This video is too large for Telegram (bot upload limit is 50 MB).\n\n` +
+            `🔗 Watch it here:\n${result.webpage_url || result.video}`,
+            getAdminContactMarkup()
+        );
+        return;
+    }
+
+    try {
+        await ctx.replyWithVideo(
+            { url: result.video },
+            { caption: buildVideoCaption(result.title), ...getAdminContactMarkup() }
+        );
+    } catch (videoErr) {
+        console.error('Video send failed:', videoErr.message);
+        await ctx.reply(
+            `⚠️ Could not send the video directly.\n\n` +
+            `🔗 Watch it here:\n${result.webpage_url || result.video}`,
+            getAdminContactMarkup()
+        );
+    }
 }
 
 bot.catch(async (err, ctx) => {
@@ -1132,6 +1266,74 @@ bot.action('soon', async (ctx) => {
     }
 });
 
+bot.action(/^ytq:([0-9a-f]{12}):(\d+|cancel)$/, async (ctx) => {
+    const [, token, choice] = ctx.match;
+    const selection = pendingYouTubeQualitySelections.get(token);
+
+    if (!selection || Date.now() - selection.createdAt > YT_QUALITY_SELECTION_TTL_MS) {
+        pendingYouTubeQualitySelections.delete(token);
+        await ctx.answerCbQuery('This quality menu has expired. Send the YouTube link again.', { show_alert: true });
+        return;
+    }
+
+    if (selection.chatId !== ctx.chat?.id || selection.userId !== ctx.from?.id) {
+        await ctx.answerCbQuery('This quality menu belongs to another user.', { show_alert: true });
+        return;
+    }
+
+    if (choice === 'cancel') {
+        pendingYouTubeQualitySelections.delete(token);
+        await ctx.answerCbQuery('Cancelled');
+        await ctx.deleteMessage().catch(() => { });
+        return;
+    }
+
+    const height = Number(choice);
+    if (!selection.qualities.includes(height)) {
+        await ctx.answerCbQuery('That quality is no longer available. Send the link again.', { show_alert: true });
+        return;
+    }
+
+    // Remove it before downloading so repeated taps cannot start duplicate
+    // yt-dlp processes for the same request.
+    pendingYouTubeQualitySelections.delete(token);
+    await ctx.answerCbQuery(`Downloading ${height}p…`);
+    await ctx.editMessageText(`▶️ Downloading ${height}p, please wait...`).catch(() => { });
+
+    try {
+        const downloaded = await withDownloadTimeout(
+            downloadYouTubeVideoFile(selection.watchUrl, selection.cookieFlags, [height], true)
+        );
+        const result = downloaded
+            ? {
+                type: 'video',
+                title: selection.title,
+                webpage_url: selection.watchUrl,
+                video: buildVideoProxyUrl(downloaded.file),
+                file: downloaded.file,
+                height,
+            }
+            : {
+                type: 'video',
+                title: selection.title,
+                webpage_url: selection.watchUrl,
+                video: selection.watchUrl,
+                file: null,
+                tooLarge: true,
+                height,
+            };
+
+        await ctx.deleteMessage().catch(() => { });
+        await sendVideoResultToChat(ctx, result);
+    } catch (err) {
+        console.error(`YouTube ${height}p selection failed:`, err.message || err.stderr || err);
+        const message = isDownloadTimeoutError(err) || isAnyTimeoutError(err)
+            ? 'Failed to download the video after 2 minutes. Please try again.'
+            : `Could not download the ${height}p version. Please send the link again and choose another quality.`;
+        await ctx.editMessageText(`⚠️ ${message}`).catch(() => ctx.reply(`⚠️ ${message}`));
+    }
+});
+
 bot.command('emojiids', async (ctx) => {
     const set = await ctx.telegram.getStickerSet('savedtiktoka_by_emoji_saverbot');
     const lines = set.stickers.map(s => `${s.emoji} ${s.custom_emoji_id}`);
@@ -1200,10 +1402,43 @@ bot.on('text', async (ctx, next) => {
             return;
         }
 
-        const platformEmoji = { tiktok: '🎵', instagram: '📸', facebook: '📘', youtube: '▶️' }[platform];
-        await ctx.reply(`${platformEmoji} Fetching your ${platform} media, please wait...`);
+        let result;
 
-        const result = await withDownloadTimeout(downloadMedia(url));
+        if (platform === 'youtube') {
+            await ctx.reply('▶️ Finding available YouTube qualities, please wait...');
+            const selection = await withDownloadTimeout(downloadYouTube(url, { metadataOnly: true }));
+
+            if (selection.type === 'quality_selection' && selection.qualities.length > 0) {
+                pruneExpiredYouTubeQualitySelections();
+                const token = randomUUID().replace(/-/g, '').slice(0, 12);
+                pendingYouTubeQualitySelections.set(token, {
+                    chatId: ctx.chat.id,
+                    userId: ctx.from.id,
+                    title: selection.title,
+                    watchUrl: selection.webpage_url,
+                    cookieFlags: selection.cookieFlags,
+                    qualities: selection.qualities,
+                    createdAt: Date.now(),
+                });
+
+                await ctx.reply(
+                    `▶️ ${selection.title}\n\nChoose the video quality you want:`,
+                    { reply_markup: createYouTubeQualityKeyboard(token, selection.qualities) }
+                );
+                return;
+            }
+
+            // Playlists are already fully described by the metadata request.
+            // A video with no usable format is retried through the regular
+            // downloader so it can use yt-dlp's fallback selector.
+            result = selection.type === 'playlist'
+                ? selection
+                : await withDownloadTimeout(downloadYouTube(url));
+        } else {
+            const platformEmoji = { tiktok: '🎵', instagram: '📸', facebook: '📘' }[platform];
+            await ctx.reply(`${platformEmoji} Fetching your ${platform} media, please wait...`);
+            result = await withDownloadTimeout(downloadMedia(url));
+        }
 
         if (result.type === 'carousel') {
             const images = result.images;
@@ -1240,50 +1475,7 @@ bot.on('text', async (ctx, next) => {
             await ctx.reply('Want your own downloader bot?', getAdminContactMarkup());
 
         } else if (result.type === 'video') {
-            if (result.file) {
-                // Downloaded on the server: direct googlevideo/Instagram/Facebook
-                // URLs are IP-bound or expire, so Telegram cannot fetch them.
-                try {
-                    await sendVideoFileToChat(
-                        ctx,
-                        result.file,
-                        buildVideoCaption(result.title)
-                    );
-                    console.log(`Sent video file${result.height ? ` (<=${result.height}p)` : ''}: ${result.title}`);
-                } catch (videoErr) {
-                    console.error('Video upload failed:', videoErr.message);
-                    await ctx.reply(
-                        `⚠️ Could not send the video file.\n\n` +
-                        `🔗 Watch it here:\n${result.webpage_url || result.video}`,
-                        getAdminContactMarkup()
-                    );
-                } finally {
-                    await removeYouTubeTempFile(result.file);
-                }
-            } else if (result.tooLarge) {
-                await ctx.reply(
-                    `⚠️ This video is too large for Telegram (bot upload limit is 50 MB).\n\n` +
-                    `🔗 Watch it here:\n${result.webpage_url || result.video}`,
-                    getAdminContactMarkup()
-                );
-            } else {
-                try {
-                    await ctx.replyWithVideo(
-                        { url: result.video },
-                        {
-                            caption: buildVideoCaption(result.title),
-                            ...getAdminContactMarkup()
-                        }
-                    );
-                } catch (videoErr) {
-                    console.error('Video send failed:', videoErr.message);
-                    await ctx.reply(
-                        `⚠️ Could not send the video directly.\n\n` +
-                        `🔗 Watch it here:\n${result.webpage_url || result.video}`,
-                        getAdminContactMarkup()
-                    );
-                }
-            }
+            await sendVideoResultToChat(ctx, result);
         } else if (result.type === 'playlist') {
             // Telegram can't bulk-send a playlist, so send a summary with links
             const lines = result.entries.slice(0, 20).map((e, i) =>
@@ -1543,6 +1735,7 @@ const server = app.listen(PORT, async () => {
 
     await cleanupStaleTempFiles();
     setInterval(cleanupStaleTempFiles, YT_TEMP_MAX_AGE_MS);
+    setInterval(pruneExpiredYouTubeQualitySelections, YT_QUALITY_SELECTION_TTL_MS);
 
     try {
         job.start();
