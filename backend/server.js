@@ -305,16 +305,38 @@ async function downloadTikTok(url) {
     if (d.images && d.images.length > 0) {
         return { ...base, type: 'carousel', images: d.images };
     } else if (d.play) {
-        return { ...base, type: 'video', video: d.play };
+        // TikTok returns a short-lived, IP-sensitive CDN URL. Telegram's
+        // servers frequently cannot retrieve that URL themselves, which made
+        // the bot fall back to sending the raw tiktokcdn.com link. Fetch it
+        // from this server and upload the resulting file to Telegram instead.
+        let download = { file: null, tooLarge: false };
+
+        try {
+            download = await prepareVideoFileForTelegram(d.play, url);
+        } catch (err) {
+            if (isDownloadTimeoutError(err)) throw err;
+            // Keep the direct URL as a last resort. This matches the existing
+            // Instagram/Facebook behavior when a CDN download cannot be made.
+            console.error('TikTok media file download failed:', err.message);
+        }
+
+        return {
+            ...base,
+            type: 'video',
+            video: d.play,
+            webpage_url: url,
+            file: download.file,
+            tooLarge: download.tooLarge,
+        };
     }
 
     throw new Error('No media found in this TikTok');
 }
 
-// ─── Instagram / Facebook temp files ─────────────────────────────────────────
-// Instagram/Facebook CDN links are signed, expire quickly, and are frequently
-// rejected when Telegram tries to fetch them itself. Download the media here and
-// upload it through the Bot API instead.
+// ─── Social-media video temp files ───────────────────────────────────────────
+// Social-media CDN links are signed, expire quickly, and are frequently rejected
+// when Telegram tries to fetch them itself. Download the media here and upload it
+// through the Bot API instead.
 async function downloadUrlToTempFile(mediaUrl) {
     const token = `${Date.now()}_${randomUUID()}`;
     const filePath = path.join(os.tmpdir(), `${IG_TEMP_PREFIX}${token}.mp4`);
