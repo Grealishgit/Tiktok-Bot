@@ -1126,11 +1126,19 @@ function createYouTubeQualityKeyboard(token, qualities) {
     return { inline_keyboard: rows };
 }
 
+async function deleteStatusMessage(ctx, message) {
+    if (!message?.message_id || !ctx.chat?.id) return;
+
+    await ctx.telegram.deleteMessage(ctx.chat.id, message.message_id)
+        .catch(err => console.warn('Could not delete status message:', err.message));
+}
+
 async function sendVideoResultToChat(ctx, result) {
     if (result.file) {
         try {
             await sendVideoFileToChat(ctx, result.file, buildVideoCaption(result.title));
             console.log(`Sent video file${result.height ? ` (<=${result.height}p)` : ''}: ${result.title}`);
+            return true;
         } catch (videoErr) {
             console.error('Video upload failed:', videoErr.message);
             await ctx.reply(
@@ -1141,7 +1149,7 @@ async function sendVideoResultToChat(ctx, result) {
         } finally {
             await removeYouTubeTempFile(result.file);
         }
-        return;
+        return false;
     }
 
     if (result.tooLarge) {
@@ -1150,7 +1158,7 @@ async function sendVideoResultToChat(ctx, result) {
             `🔗 Watch it here:\n${result.webpage_url || result.video}`,
             getAdminContactMarkup()
         );
-        return;
+        return false;
     }
 
     try {
@@ -1158,6 +1166,7 @@ async function sendVideoResultToChat(ctx, result) {
             { url: result.video },
             { caption: buildVideoCaption(result.title), ...getAdminContactMarkup() }
         );
+        return true;
     } catch (videoErr) {
         console.error('Video send failed:', videoErr.message);
         await ctx.reply(
@@ -1165,6 +1174,7 @@ async function sendVideoResultToChat(ctx, result) {
             `🔗 Watch it here:\n${result.webpage_url || result.video}`,
             getAdminContactMarkup()
         );
+        return false;
     }
 }
 
@@ -1403,9 +1413,10 @@ bot.on('text', async (ctx, next) => {
         }
 
         let result;
+        let loadingMessage;
 
         if (platform === 'youtube') {
-            await ctx.reply('▶️ Finding available YouTube qualities, please wait...');
+            loadingMessage = await ctx.reply('▶️ Finding available YouTube qualities, please wait...');
             const selection = await withDownloadTimeout(downloadYouTube(url, { metadataOnly: true }));
 
             if (selection.type === 'quality_selection' && selection.qualities.length > 0) {
@@ -1425,6 +1436,7 @@ bot.on('text', async (ctx, next) => {
                     `▶️ ${selection.title}\n\nChoose the video quality you want:`,
                     { reply_markup: createYouTubeQualityKeyboard(token, selection.qualities) }
                 );
+                await deleteStatusMessage(ctx, loadingMessage);
                 return;
             }
 
@@ -1436,13 +1448,14 @@ bot.on('text', async (ctx, next) => {
                 : await withDownloadTimeout(downloadYouTube(url));
         } else {
             const platformEmoji = { tiktok: '🎵', instagram: '📸', facebook: '📘' }[platform];
-            await ctx.reply(`${platformEmoji} Fetching your ${platform} media, please wait...`);
+            loadingMessage = await ctx.reply(`${platformEmoji} Fetching your ${platform} media, please wait...`);
             result = await withDownloadTimeout(downloadMedia(url));
         }
 
         if (result.type === 'carousel') {
             const images = result.images;
             const maxPerGroup = 10;
+            let sentAllMedia = true;
 
             for (let i = 0; i < images.length; i += maxPerGroup) {
                 const chunk = images.slice(i, i + maxPerGroup);
@@ -1467,15 +1480,19 @@ bot.on('text', async (ctx, next) => {
                             await new Promise(resolve => setTimeout(resolve, 500));
                         } catch (photoErr) {
                             console.error('Individual photo failed:', photoErr.message);
+                            sentAllMedia = false;
                         }
                     }
                 }
             }
 
+            if (sentAllMedia) await deleteStatusMessage(ctx, loadingMessage);
+
             await ctx.reply('Want your own downloader bot?', getAdminContactMarkup());
 
         } else if (result.type === 'video') {
-            await sendVideoResultToChat(ctx, result);
+            const sentVideo = await sendVideoResultToChat(ctx, result);
+            if (sentVideo) await deleteStatusMessage(ctx, loadingMessage);
         } else if (result.type === 'playlist') {
             // Telegram can't bulk-send a playlist, so send a summary with links
             const lines = result.entries.slice(0, 20).map((e, i) =>
@@ -1489,6 +1506,7 @@ bot.on('text', async (ctx, next) => {
                 lines.join('\n') + truncated,
                 getAdminContactMarkup()
             );
+            await deleteStatusMessage(ctx, loadingMessage);
         }
 
     } catch (err) {
